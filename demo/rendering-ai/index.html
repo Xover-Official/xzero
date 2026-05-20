@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XZero — Maze School Explorer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a12; overflow: hidden; font-family: 'Courier New', monospace; }
+        canvas { display: block; }
+        #hud { position: absolute; top: 0; left: 0; right: 0; pointer-events: none; z-index: 10; }
+        #top-bar { display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 16px; }
+        #school-info { background: rgba(0,0,0,0.75); border: 1px solid #333; border-radius: 6px; padding: 10px 14px; color: #ccc; font-size: 12px; line-height: 1.6; }
+        #school-info .name { color: #00ff88; font-size: 14px; font-weight: bold; }
+        #school-info .seed { color: #888; }
+        #school-info .share { color: #ffaa00; word-break: break-all; }
+        #stats-panel { background: rgba(0,0,0,0.75); border: 1px solid #333; border-radius: 6px; padding: 10px 14px; color: #ccc; font-size: 11px; line-height: 1.8; text-align: right; }
+        #stats-panel .val { color: #00ff88; }
+        #stress-bar-container { position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); width: 300px; text-align: center; }
+        #stress-label { color: #aaa; font-size: 11px; margin-bottom: 4px; }
+        #stress-bar { width: 100%; height: 8px; background: #222; border-radius: 4px; overflow: hidden; }
+        #stress-fill { height: 100%; width: 0%; border-radius: 4px; transition: width 0.3s, background 0.3s; }
+        #help-prompt { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); border: 1px solid #ff4444; border-radius: 6px; padding: 8px 16px; color: #ff8888; font-size: 13px; display: none; text-align: center; }
+        #event-log { position: absolute; bottom: 16px; left: 16px; right: 16px; max-height: 120px; overflow-y: auto; pointer-events: none; }
+        .log-entry { background: rgba(0,0,0,0.6); border-left: 3px solid #00ff88; padding: 4px 10px; margin-bottom: 4px; color: #ccc; font-size: 11px; border-radius: 0 4px 4px 0; animation: fadeIn 0.3s ease-out; }
+        .log-entry.rare { border-left-color: #ffaa00; color: #ffdd88; }
+        .log-entry.transform { border-left-color: #ff4444; color: #ff8888; }
+        .log-entry.stress { border-left-color: #8888ff; color: #aaaaff; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        #controls-hint { position: absolute; bottom: 16px; right: 16px; background: rgba(0,0,0,0.7); border: 1px solid #333; border-radius: 6px; padding: 8px 12px; color: #666; font-size: 11px; line-height: 1.6; }
+        #controls-hint kbd { background: #222; border: 1px solid #444; border-radius: 3px; padding: 1px 5px; color: #aaa; font-size: 10px; }
+        #minimap { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); border: 1px solid #333; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <canvas id="game"></canvas>
+    <div id="hud">
+        <div id="top-bar">
+            <div id="school-info">
+                <div class="name" id="school-name">Sakura Academy</div>
+                <div class="seed" id="school-seed">Seed: 42</div>
+                <div class="share" id="school-share">xzero://seed-42</div>
+            </div>
+            <div id="stats-panel">
+                <div>Chunks: <span class="val" id="stat-chunks">0</span></div>
+                <div>Helped: <span class="val" id="stat-helped">0</span></div>
+                <div>Rare: <span class="val" id="stat-rare">0</span></div>
+                <div>NPCs: <span class="val" id="stat-npcs">0</span></div>
+                <div>FPS: <span class="val" id="stat-fps">0</span></div>
+            </div>
+        </div>
+        <canvas id="minimap" width="200" height="200"></canvas>
+        <div id="stress-bar-container">
+            <div id="stress-label">Stress Level</div>
+            <div id="stress-bar"><div id="stress-fill"></div></div>
+        </div>
+        <div id="help-prompt"></div>
+        <div id="event-log"></div>
+        <div id="controls-hint">
+            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move<br>
+            <kbd>E</kbd> Help NPC<br>
+            <kbd>Scroll</kbd> Zoom
+        </div>
+    </div>
+<script>
+// ═══════════════════════════════════════════════════════════
+// XZero — Self-Contained Maze School Explorer
+// ═══════════════════════════════════════════════════════════
+
+const TILE_SIZE = 32;
+const CHUNK_SIZE = 8;
+const WORLD_SEED = 42;
+const NPC_COUNT = 12;
+const VIEW_CHUNKS = 3;
+
+// ─── Tile Definitions ────────────────────────────────────
+const TILE_TYPES = [
+  { id: "hallway_straight", category: "hallway", stress: "medium", weight: 4 },
+  { id: "hallway_corner", category: "hallway", stress: "medium", weight: 4 },
+  { id: "hallway_branch", category: "hallway", stress: "high", weight: 2 },
+  { id: "hallway_dead_end", category: "hallway", stress: "high", weight: 2 },
+  { id: "hallway_cross", category: "hallway", stress: "high", weight: 1 },
+  { id: "hallway_loop_connector", category: "hallway", stress: "medium", weight: 1 },
+  { id: "classroom", category: "classroom", stress: "medium", weight: 3 },
+  { id: "courtyard", category: "courtyard", stress: "low", weight: 1 },
+  { id: "entrance", category: "entrance", stress: "medium", weight: 1 },
+  { id: "stairwell", category: "stairwell", stress: "medium", weight: 1 },
+  { id: "toilet", category: "toilet", stress: "low", weight: 1 },
+  { id: "roof", category: "outdoor", stress: "low", weight: 1 },
+];
+
+const RARE_TILES = [
+  { id: "rare_locked_music_room", name: "Locked Music Room", rarity: 0.008, color: "#aa8833", msg: "You found a hidden music room — a dusty piano sits in the corner" },
+  { id: "rare_hidden_courtyard", name: "Hidden Courtyard", rarity: 0.012, color: "#33aa55", msg: "Behind the bushes lies a forgotten courtyard — the air feels lighter" },
+  { id: "rare_teacher_free_zone", name: "Teacher-Free Zone", rarity: 0.015, color: "#5588aa", msg: "A corridor where teachers never patrol — students breathe easier here" },
+  { id: "rare_secret_passage", name: "Secret Passage", rarity: 0.005, color: "#8833aa", msg: "A hidden passage behind a loose bookshelf — it leads somewhere unexpected" },
+  { id: "rare_rooftop_garden", name: "Rooftop Garden", rarity: 0.010, color: "#33aa88", msg: "Someone has been growing flowers on the roof — a quiet sanctuary" },
+  { id: "rare_abandoned_clubroom", name: "Abandoned Clubroom", rarity: 0.012, color: "#aa5533", msg: "An old clubroom frozen in time — posters from years past still hang" },
+];
+
+const TILE_COLORS = {};
+TILE_TYPES.forEach(t => {
+  TILE_COLORS[t.id] = {
+    hallway_straight: "#4a4a52", hallway_corner: "#424248", hallway_branch: "#5a3a3a",
+    hallway_dead_end: "#3a3040", hallway_cross: "#505058", hallway_loop_connector: "#3a5040",
+    classroom: "#6a6040", courtyard: "#3a6040", entrance: "#605040",
+    stairwell: "#4a4050", toilet: "#505a60", roof: "#404a5a",
+  }[t.id] || "#3a3a42";
+});
+RARE_TILES.forEach(t => TILE_COLORS[t.id] = t.color);
+
+const MOOD_COLORS = { burnout: "#ff3333", anxious: "#ffaa00", drowsy: "#6666cc", social: "#33cc55", avoidant: "#aa44aa", focused: "#4488ff", relaxed: "#44dd88" };
+const MOOD_GLOW = { burnout: 0.8, anxious: 0.6, drowsy: 0.3, social: 0.4, avoidant: 0.5, focused: 0.2, relaxed: 0.25 };
+const NPC_NAMES = ["Yuki","Haruto","Sakura","Ren","Hina","Sota","Aoi","Riku","Mio","Kaito","Yui","Taro"];
+const MOODS = ["burnout","anxious","drowsy","social","avoidant","focused","relaxed"];
+const LOCATIONS = ["classroom","stairwell","courtyard","hallway","toilet","roof","corridor"];
+
+// ─── Seeded RNG ──────────────────────────────────────────
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function hashCoords(x, z, seed) {
+  let h = seed | 0;
+  h = Math.imul(h ^ x, 0x5bd1e995);
+  h = Math.imul(h ^ z, 0x5bd1e995);
+  h = h ^ (h >>> 13);
+  return Math.abs(h);
+}
+
+// ─── WFC (Simplified) ────────────────────────────────────
+function generateChunkTiles(chunkX, chunkZ, seed) {
+  const chunkSeed = hashCoords(chunkX, chunkZ, seed);
+  const rng = mulberry32(chunkSeed);
+  const tiles = {};
+
+  // Build weighted tile list
+  const weighted = [];
+  TILE_TYPES.forEach(t => { for (let i = 0; i < t.weight; i++) weighted.push(t.id); });
+
+  // Generate maze-like layout using cellular automata + WFC-inspired placement
+  const grid = [];
+  for (let z = 0; z < CHUNK_SIZE; z++) {
+    grid[z] = [];
+    for (let x = 0; x < CHUNK_SIZE; x++) {
+      grid[z][x] = { possible: [...weighted], collapsed: false, tile: null };
+    }
+  }
+
+  // Seed entrance
+  const entX = Math.floor(CHUNK_SIZE / 2);
+  const entZ = CHUNK_SIZE - 1;
+  collapseCell(grid, entZ, entX, ["entrance"], rng);
+
+  // Seed courtyard
+  const courtX = Math.floor(rng() * CHUNK_SIZE);
+  const courtZ = Math.floor(rng() * CHUNK_SIZE);
+  collapseCell(grid, courtZ, courtX, ["courtyard"], rng);
+
+  // Collapse remaining cells with adjacency constraints
+  let changed = true;
+  let iterations = 0;
+  while (changed && iterations < 200) {
+    changed = false;
+    iterations++;
+
+    // Find cell with lowest entropy
+    let minEntropy = Infinity;
+    let targetX = -1, targetZ = -1;
+    for (let z = 0; z < CHUNK_SIZE; z++) {
+      for (let x = 0; x < CHUNK_SIZE; x++) {
+        if (!grid[z][x].collapsed && grid[z][x].possible.length > 0) {
+          const entropy = grid[z][x].possible.length;
+          if (entropy < minEntropy) {
+            minEntropy = entropy;
+            targetX = x; targetZ = z;
+          }
+        }
+      }
+    }
+
+    if (targetX >= 0) {
+      const cell = grid[targetZ][targetX];
+      const tileId = cell.possible[Math.floor(rng() * cell.possible.length)];
+      collapseCell(grid, targetZ, targetX, [tileId], rng);
+      changed = true;
+    }
+  }
+
+  // Fill any remaining uncollapsed cells
+  for (let z = 0; z < CHUNK_SIZE; z++) {
+    for (let x = 0; x < CHUNK_SIZE; x++) {
+      if (!grid[z][x].collapsed) {
+        grid[z][x].tile = weighted[Math.floor(rng() * weighted.length)];
+        grid[z][x].collapsed = true;
+      }
+    }
+  }
+
+  // Convert to world coordinates
+  const result = {};
+  for (let z = 0; z < CHUNK_SIZE; z++) {
+    for (let x = 0; x < CHUNK_SIZE; x++) {
+      const wx = chunkX * CHUNK_SIZE + x;
+      const wz = chunkZ * CHUNK_SIZE + z;
+      result[`${wx},${wz}`] = { typeId: grid[z][x].tile, rotation: 0, flipX: false };
+    }
+  }
+
+  // Check for rare tiles
+  for (const def of RARE_TILES) {
+    const rarity = rng();
+    if (rarity < def.rarity) {
+      const rx = chunkX * CHUNK_SIZE + Math.floor(rng() * CHUNK_SIZE);
+      const rz = chunkZ * CHUNK_SIZE + Math.floor(rng() * CHUNK_SIZE);
+      result[`${rx},${rz}`] = { typeId: def.id, rotation: 0, flipX: false };
+    }
+  }
+
+  return result;
+}
+
+function collapseCell(grid, z, x, forcedTiles, rng) {
+  const cell = grid[z][x];
+  cell.possible = forcedTiles.filter(t => cell.possible.includes(t));
+  if (cell.possible.length === 0) cell.possible = [...forcedTiles];
+  cell.tile = cell.possible[0];
+  cell.collapsed = true;
+
+  // Propagate to neighbors (simplified)
+  const neighbors = [[0,1],[0,-1],[1,0],[-1,0]];
+  for (const [dz, dx] of neighbors) {
+    const nz = z + dz, nx = x + dx;
+    if (nz >= 0 && nz < CHUNK_SIZE && nx >= 0 && nx < CHUNK_SIZE && !grid[nz][nx].collapsed) {
+      const n = grid[nz][nx];
+      // Remove incompatible tiles (simplified: just reduce options)
+      const currentType = cell.tile;
+      if (currentType.includes("courtyard")) {
+        n.possible = n.possible.filter(t => t.includes("hallway") || t.includes("entrance") || t.includes("courtyard"));
+      } else if (currentType.includes("entrance")) {
+        n.possible = n.possible.filter(t => t.includes("hallway") || t.includes("entrance"));
+      }
+      if (n.possible.length === 0) n.possible = ["hallway_straight"];
+    }
+  }
+}
+
+// ─── Canvas Setup ────────────────────────────────────────
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const minimapCanvas = document.getElementById("minimap");
+const minimapCtx = minimapCanvas.getContext("2d");
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener("resize", resize);
+
+// ─── Game State ──────────────────────────────────────────
+const state = {
+  playerX: CHUNK_SIZE * TILE_SIZE / 2,
+  playerZ: CHUNK_SIZE * TILE_SIZE / 2,
+  cameraX: 0, cameraZ: 0, zoom: 1,
+  chunks: {}, npcs: [], npcStates: {}, npcPositions: {},
+  interactableNPC: null,
+  playerStress: 0,
+  chunksExplored: 0, npcsHelped: 0, rareDiscoveries: 0,
+  transformingChunks: {},
+  keys: new Set(),
+  fps: 0, frameCount: 0, lastFpsTime: 0,
+  time: 0, gameHour: 8,
+  discoveredRare: new Set(),
+};
+
+// ─── Input ───────────────────────────────────────────────
+window.addEventListener("keydown", e => {
+  state.keys.add(e.code);
+  if (e.code === "KeyE") handleInteract();
+  if (e.code === "Tab") { e.preventDefault(); addLog("Share code: xzero://seed-" + WORLD_SEED + "-helped-" + state.npcsHelped, "rare"); }
+});
+window.addEventListener("keyup", e => state.keys.delete(e.code));
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  state.zoom = Math.max(0.3, Math.min(3, state.zoom - e.deltaY * 0.001));
+});
+
+// ─── World Management ────────────────────────────────────
+function chunkId(x, z) { return x + "_" + z; }
+
+function ensureChunk(cx, cz) {
+  const id = chunkId(cx, cz);
+  if (!state.chunks[id]) {
+    state.chunks[id] = generateChunkTiles(cx, cz, WORLD_SEED);
+    state.chunksExplored++;
+  }
+}
+
+function loadNearby() {
+  const pcx = Math.floor(state.playerX / (CHUNK_SIZE * TILE_SIZE));
+  const pcz = Math.floor(state.playerZ / (CHUNK_SIZE * TILE_SIZE));
+  for (let dx = -VIEW_CHUNKS; dx <= VIEW_CHUNKS; dx++)
+    for (let dz = -VIEW_CHUNKS; dz <= VIEW_CHUNKS; dz++)
+      ensureChunk(pcx + dx, pcz + dz);
+}
+
+// ─── NPC Spawning ────────────────────────────────────────
+function spawnNPCs() {
+  for (let i = 0; i < NPC_COUNT; i++) {
+    const mood = MOODS[i % MOODS.length];
+    const location = LOCATIONS[i % LOCATIONS.length];
+    const stress = mood === "burnout" ? 0.9 : mood === "anxious" ? 0.7 : mood === "relaxed" ? 0.2 : 0.5;
+    const energy = mood === "drowsy" ? 0.2 : mood === "burnout" ? 0.15 : 0.7;
+
+    const chunkX = ((WORLD_SEED * (i + 1) * 7) % 5) - 2;
+    const chunkZ = ((WORLD_SEED * (i + 1) * 13) % 5) - 2;
+    const tileX = (chunkX * CHUNK_SIZE + (i * 3 % CHUNK_SIZE)) * TILE_SIZE + TILE_SIZE / 2;
+    const tileZ = (chunkZ * CHUNK_SIZE + (i * 5 % CHUNK_SIZE)) * TILE_SIZE + TILE_SIZE / 2;
+
+    state.npcs.push({ id: "npc_" + i, name: NPC_NAMES[i % NPC_NAMES.length], currentLocation: location });
+    state.npcStates["npc_" + i] = {
+      mood, stressLevel: stress, energyLevel: energy,
+      focusLevel: mood === "focused" ? 0.9 : 0.5,
+      socialDesire: mood === "social" ? 0.8 : 0.3,
+      escapeUrge: mood === "avoidant" ? 0.7 : 0.2,
+      motivation: mood === "burnout" ? 0.1 : 0.5,
+    };
+    state.npcPositions["npc_" + i] = { x: tileX, z: tileZ };
+  }
+}
+
+// ─── Interaction ─────────────────────────────────────────
+function handleInteract() {
+  if (!state.interactableNPC) return;
+  const npc = state.npcs.find(n => n.id === state.interactableNPC);
+  const ns = state.npcStates[state.interactableNPC];
+  if (!npc || !ns) return;
+
+  const prev = ns.mood;
+  const next = prev === "burnout" ? "relaxed" : prev === "anxious" ? "focused" : prev === "avoidant" ? "social" : null;
+  if (!next) return;
+
+  ns.mood = next;
+  ns.stressLevel = Math.max(0, ns.stressLevel - 0.4);
+  ns.energyLevel = Math.min(1, ns.energyLevel + 0.3);
+  state.npcsHelped++;
+
+  addLog(npc.name + ": " + prev + " → " + next, "transform");
+
+  // Chunk transformation
+  const pos = state.npcPositions[npc.id];
+  const cx = Math.floor(pos.x / (CHUNK_SIZE * TILE_SIZE));
+  const cz = Math.floor(pos.z / (CHUNK_SIZE * TILE_SIZE));
+  const cid = chunkId(cx, cz);
+
+  state.transformingChunks[cid] = { progress: 0, reason: "Helped " + npc.name };
+
+  setTimeout(() => {
+    delete state.chunks[cid];
+    ensureChunk(cx, cz);
+    addLog("Chunk transformed: " + cid, "transform");
+    setTimeout(() => delete state.transformingChunks[cid], 500);
+  }, 800);
+
+  state.interactableNPC = null;
+  updateHelpPrompt();
+}
+
+function updateInteractable() {
+  const ptx = state.playerX / TILE_SIZE;
+  const ptz = state.playerZ / TILE_SIZE;
+  let closest = null, closestDist = 3.0;
+
+  for (const npc of state.npcs) {
+    const pos = state.npcPositions[npc.id];
+    const ns = state.npcStates[npc.id];
+    if (!ns) continue;
+    const dx = pos.x / TILE_SIZE - ptx;
+    const dz = pos.z / TILE_SIZE - ptz;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < closestDist && (ns.mood === "burnout" || ns.mood === "anxious" || ns.mood === "avoidant")) {
+      closestDist = dist;
+      closest = npc.id;
+    }
+  }
+
+  state.interactableNPC = closest;
+  updateHelpPrompt();
+}
+
+function updateHelpPrompt() {
+  const el = document.getElementById("help-prompt");
+  if (!state.interactableNPC) { el.style.display = "none"; return; }
+  const npc = state.npcs.find(n => n.id === state.interactableNPC);
+  const ns = state.npcStates[state.interactableNPC];
+  const msgs = { burnout: "[E] Help " + npc.name + " — they're in burnout", anxious: "[E] Calm " + npc.name + " — they're anxious", avoidant: "[E] Approach " + npc.name + " — they're hiding" };
+  const msg = msgs[ns.mood];
+  if (msg) { el.style.display = "block"; el.textContent = msg; } else { el.style.display = "none"; }
+}
+
+// ─── Event Log ───────────────────────────────────────────
+function addLog(text, type) {
+  const el = document.getElementById("event-log");
+  const entry = document.createElement("div");
+  entry.className = "log-entry" + (type ? " " + type : "");
+  entry.textContent = text;
+  el.appendChild(entry);
+  el.scrollTop = el.scrollHeight;
+  while (el.children.length > 20) el.removeChild(el.firstChild);
+}
+
+// ─── Rendering ───────────────────────────────────────────
+function w2s(wx, wz) { return [(wx - state.cameraX) * state.zoom + canvas.width / 2, (wz - state.cameraZ) * state.zoom + canvas.height / 2]; }
+
+function drawTile(wx, wz, typeId) {
+  const color = TILE_COLORS[typeId] || "#3a3a42";
+  const [sx, sy] = w2s(wx * TILE_SIZE, wz * TILE_SIZE);
+  const size = TILE_SIZE * state.zoom;
+  if (sx < -size || sy < -size || sx > canvas.width + size || sy > canvas.height + size) return;
+
+  ctx.fillStyle = color;
+  ctx.fillRect(sx - size / 2, sy - size / 2, size, size);
+  ctx.strokeStyle = "rgba(255,255,255,0.04)";
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(sx - size / 2, sy - size / 2, size, size);
+
+  if (typeId.startsWith("rare_")) {
+    const isRare = !state.discoveredRare.has(wx + "," + wz);
+    ctx.fillStyle = isRare ? "rgba(255,200,50,0.4)" : "rgba(255,200,50,0.15)";
+    ctx.beginPath();
+    ctx.arc(sx, sy, size * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    if (isRare) {
+      ctx.fillStyle = "#ffcc33";
+      ctx.font = Math.max(8, 12 * state.zoom) + "px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("★", sx, sy + 4 * state.zoom);
+      // Discover it
+      state.discoveredRare.add(wx + "," + wz);
+      state.rareDiscoveries++;
+      const def = RARE_TILES.find(t => t.id === typeId);
+      if (def) addLog(def.msg, "rare");
+    }
+  }
+}
+
+function drawPlayer() {
+  const [sx, sy] = w2s(state.playerX, state.playerZ);
+  const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, 20 * state.zoom);
+  g.addColorStop(0, "rgba(0,255,136,0.4)");
+  g.addColorStop(1, "rgba(0,255,136,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(sx, sy, 20 * state.zoom, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#00ff88";
+  ctx.beginPath(); ctx.arc(sx, sy, 5 * state.zoom, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(sx, sy, 5 * state.zoom, 0, Math.PI * 2); ctx.stroke();
+}
+
+function drawNPC(npc, ns, pos) {
+  const [sx, sy] = w2s(pos.x, pos.z);
+  const size = TILE_SIZE * state.zoom;
+  if (sx < -size * 2 || sy < -size * 2 || sx > canvas.width + size * 2 || sy > canvas.height + size * 2) return;
+
+  const mc = MOOD_COLORS[ns.mood];
+  const gi = MOOD_GLOW[ns.mood];
+
+  // Aura
+  const aura = (12 + gi * 15) * state.zoom;
+  const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, aura);
+  g.addColorStop(0, mc + "88"); g.addColorStop(0.5, mc + "33"); g.addColorStop(1, mc + "00");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(sx, sy, aura, 0, Math.PI * 2); ctx.fill();
+
+  // Pulse for distressed
+  if (ns.mood === "burnout" || ns.mood === "anxious") {
+    const pulse = Math.sin(state.time * 5) * 0.3 + 0.7;
+    ctx.strokeStyle = mc; ctx.lineWidth = 2 * state.zoom * pulse;
+    ctx.beginPath(); ctx.arc(sx, sy, (8 + gi * 8) * state.zoom, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Dot
+  ctx.fillStyle = mc;
+  ctx.beginPath(); ctx.arc(sx, sy, 4 * state.zoom, 0, Math.PI * 2); ctx.fill();
+
+  // Name
+  ctx.fillStyle = "#fff";
+  ctx.font = Math.max(8, 10 * state.zoom) + "px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(npc.name, sx, sy - 10 * state.zoom);
+  ctx.fillStyle = mc;
+  ctx.font = Math.max(7, 8 * state.zoom) + "px monospace";
+  ctx.fillText(ns.mood, sx, sy + 16 * state.zoom);
+
+  // Interactable ring
+  if (npc.id === state.interactableNPC) {
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.arc(sx, sy, 18 * state.zoom, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function drawMinimap() {
+  const mc = minimapCtx, mw = 200, mh = 200;
+  mc.fillStyle = "#0a0a12"; mc.fillRect(0, 0, mw, mh);
+  const scale = 3, cx = mw / 2, cz = mh / 2;
+
+  for (const cid in state.chunks) {
+    const tiles = state.chunks[cid];
+    for (const key in tiles) {
+      const [tx, tz] = key.split(",").map(Number);
+      const dx = (tx * TILE_SIZE - state.playerX) * scale / TILE_SIZE + cx;
+      const dz = (tz * TILE_SIZE - state.playerZ) * scale / TILE_SIZE + cz;
+      if (dx < 0 || dz < 0 || dx > mw || dz > mh) continue;
+      mc.fillStyle = TILE_COLORS[tiles[key].typeId] || "#3a3a42";
+      mc.fillRect(dx - 1, dz - 1, 2, 2);
+    }
+  }
+
+  for (const npc of state.npcs) {
+    const pos = state.npcPositions[npc.id];
+    const ns = state.npcStates[npc.id];
+    if (!ns) continue;
+    const dx = (pos.x - state.playerX) * scale / TILE_SIZE + cx;
+    const dz = (pos.z - state.playerZ) * scale / TILE_SIZE + cz;
+    if (dx < 0 || dz < 0 || dx > mw || dz > mh) continue;
+    mc.fillStyle = MOOD_COLORS[ns.mood];
+    mc.beginPath(); mc.arc(dx, dz, 3, 0, Math.PI * 2); mc.fill();
+  }
+
+  mc.fillStyle = "#00ff88";
+  mc.beginPath(); mc.arc(cx, cz, 4, 0, Math.PI * 2); mc.fill();
+  mc.strokeStyle = "#fff"; mc.lineWidth = 1;
+  mc.beginPath(); mc.arc(cx, cz, 4, 0, Math.PI * 2); mc.stroke();
+  mc.strokeStyle = "#333"; mc.lineWidth = 1; mc.strokeRect(0, 0, mw, mh);
+}
+
+function updateUI() {
+  const pct = (state.playerStress / 100) * 100;
+  const fill = document.getElementById("stress-fill");
+  fill.style.width = pct + "%";
+  fill.style.background = pct > 80 ? "linear-gradient(90deg,#ff4444,#ff0000)" : pct > 50 ? "linear-gradient(90deg,#ffaa00,#ff6600)" : pct > 20 ? "linear-gradient(90deg,#44aaff,#4488ff)" : "linear-gradient(90deg,#44dd88,#33aa66)";
+
+  document.getElementById("stat-chunks").textContent = state.chunksExplored;
+  document.getElementById("stat-helped").textContent = state.npcsHelped;
+  document.getElementById("stat-rare").textContent = state.rareDiscoveries;
+  document.getElementById("stat-npcs").textContent = state.npcs.length;
+  document.getElementById("stat-fps").textContent = state.fps;
+}
+
+// ─── Game Loop ───────────────────────────────────────────
+function update(dt) {
+  state.time += dt;
+  state.gameHour += dt * 0.5;
+
+  const speed = 120 * dt * state.zoom;
+  if (state.keys.has("KeyW") || state.keys.has("ArrowUp")) state.playerZ -= speed;
+  if (state.keys.has("KeyS") || state.keys.has("ArrowDown")) state.playerZ += speed;
+  if (state.keys.has("KeyA") || state.keys.has("ArrowLeft")) state.playerX -= speed;
+  if (state.keys.has("KeyD") || state.keys.has("ArrowRight")) state.playerX += speed;
+
+  state.cameraX += (state.playerX - state.cameraX) * 0.1;
+  state.cameraZ += (state.playerZ - state.cameraZ) * 0.1;
+
+  loadNearby();
+  updateInteractable();
+
+  // Transform animations
+  for (const cid in state.transformingChunks) {
+    state.transformingChunks[cid].progress += dt * 2;
+    if (state.transformingChunks[cid].progress > 1) delete state.transformingChunks[cid];
+  }
+
+  // Stress
+  const ptx = Math.floor(state.playerX / TILE_SIZE);
+  const ptz = Math.floor(state.playerZ / TILE_SIZE);
+  let inHighStress = false;
+  for (const cid in state.chunks) {
+    const tile = state.chunks[cid][ptx + "," + ptz];
+    if (tile && (tile.typeId.includes("exam") || tile.typeId.includes("staff"))) inHighStress = true;
+  }
+  state.playerStress = inHighStress ? Math.min(100, state.playerStress + dt * 5) : Math.max(0, state.playerStress - dt * 3);
+
+  state.frameCount++;
+  const now = performance.now();
+  if (now - state.lastFpsTime > 1000) { state.fps = state.frameCount; state.frameCount = 0; state.lastFpsTime = now; }
+}
+
+function render() {
+  ctx.fillStyle = "#0a0a12";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (const cid in state.chunks) {
+    const tiles = state.chunks[cid];
+    const anim = state.transformingChunks[cid];
+    if (anim) {
+      const [cx2, cz2] = cid.split("_").map(Number);
+      const [sx, sy] = w2s(cx2 * CHUNK_SIZE * TILE_SIZE, cz2 * CHUNK_SIZE * TILE_SIZE);
+      const size = CHUNK_SIZE * TILE_SIZE * state.zoom;
+      const flash = Math.sin(anim.progress * Math.PI * 4) * (1 - anim.progress);
+      ctx.fillStyle = "rgba(255,100,100," + (flash * 0.3) + ")";
+      ctx.fillRect(sx, sy, size, size);
+      ctx.strokeStyle = "rgba(255,68,68," + (0.8 * (1 - anim.progress)) + ")";
+      ctx.lineWidth = 3; ctx.strokeRect(sx, sy, size, size);
+    }
+
+    for (const key in tiles) {
+      const [tx, tz] = key.split(",").map(Number);
+      drawTile(tx, tz, tiles[key].typeId);
+    }
+
+    // Chunk border
+    const [cx, cz] = cid.split("_").map(Number);
+    const [sx, sy] = w2s(cx * CHUNK_SIZE * TILE_SIZE, cz * CHUNK_SIZE * TILE_SIZE);
+    ctx.strokeStyle = "rgba(0,255,136,0.15)"; ctx.lineWidth = 1;
+    ctx.strokeRect(sx, sy, CHUNK_SIZE * TILE_SIZE * state.zoom, CHUNK_SIZE * TILE_SIZE * state.zoom);
+  }
+
+  for (const npc of state.npcs) {
+    const pos = state.npcPositions[npc.id];
+    const ns = state.npcStates[npc.id];
+    if (ns) drawNPC(npc, ns, pos);
+  }
+
+  drawPlayer();
+  drawMinimap();
+  updateUI();
+}
+
+function gameLoop(ts) {
+  const dt = Math.min(0.05, (ts - (gameLoop.last || ts)) / 1000);
+  gameLoop.last = ts;
+  update(dt);
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// ─── Init ────────────────────────────────────────────────
+function init() {
+  for (let dx = -1; dx <= 1; dx++)
+    for (let dz = -1; dz <= 1; dz++)
+      ensureChunk(dx, dz);
+
+  spawnNPCs();
+
+  addLog("Welcome to Sakura Academy — explore the maze", "");
+  addLog("Find distressed students and help them", "stress");
+  addLog("Press E near a glowing NPC to help", "");
+
+  requestAnimationFrame(gameLoop);
+}
+
+init();
+</script>
+</body>
+</html>
