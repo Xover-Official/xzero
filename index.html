@@ -7,7 +7,7 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #000; overflow: hidden; }
-        canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+        canvas { display: block; image-rendering: pixelated; }
         #ui { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
         #controls { position: absolute; bottom: 20px; right: 20px; background: rgba(0,0,0,0.7); color: #fff; padding: 10px 15px; border-radius: 8px; font-family: monospace; font-size: 12px; line-height: 1.8; }
         #controls kbd { background: #333; padding: 2px 6px; border-radius: 3px; border: 1px solid #555; }
@@ -40,517 +40,6 @@ resize();
 window.addEventListener('resize', resize);
 
 // ============================================================
-// PIXEL ART SPRITE GENERATOR
-// ============================================================
-
-function createPixelCanvas(w, h) {
-    const c = document.createElement('canvas');
-    c.width = w;
-    c.height = h;
-    return { canvas: c, ctx: c.getContext('2d') };
-}
-
-function drawPixel(ctx, x, y, color) {
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, 1, 1);
-}
-
-// ============================================================
-// SPRITE: PLAYER CHARACTER (Top-down, detailed)
-// ============================================================
-function createPlayerSprite(frame, direction) {
-    const { canvas, ctx } = createPixelCanvas(16, 20);
-    
-    const bobY = Math.floor(Math.sin(frame * 0.3) * 1);
-    const legOffset = Math.floor(Math.sin(frame * 0.5) * 2);
-    
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath();
-    ctx.ellipse(8, 19, 5, 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Legs
-    ctx.fillStyle = '#2c3e50';
-    ctx.fillRect(5, 14 + legOffset, 2, 4);
-    ctx.fillRect(9, 14 - legOffset, 2, 4);
-    
-    // Shoes
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(5, 17 + legOffset, 2, 1);
-    ctx.fillRect(9, 17 - legOffset, 2, 1);
-    
-    // Body (white shirt)
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(4, 8, 8, 7);
-    
-    // Shirt collar
-    ctx.fillStyle = '#e8e8e8';
-    ctx.fillRect(6, 8, 4, 1);
-    
-    // Shirt shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.05)';
-    ctx.fillRect(4, 13, 8, 2);
-    
-    // Arms
-    const armSwing = Math.floor(Math.sin(frame * 0.5) * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(2, 9 + armSwing, 2, 5);
-    ctx.fillRect(12, 9 - armSwing, 2, 5);
-    
-    // Hands
-    ctx.fillStyle = '#f5d0a0';
-    ctx.fillRect(2, 13 + armSwing, 2, 2);
-    ctx.fillRect(12, 13 - armSwing, 2, 2);
-    
-    // Head
-    ctx.fillStyle = '#f5d0a0';
-    ctx.fillRect(5, 2 + bobY, 6, 6);
-    
-    // Hair (dark brown/black)
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(4, 0 + bobY, 8, 4);
-    ctx.fillRect(4, 2 + bobY, 1, 4);
-    ctx.fillRect(11, 2 + bobY, 1, 4);
-    
-    // Hair highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-    ctx.fillRect(6, 1 + bobY, 3, 1);
-    
-    // Eyes
-    ctx.fillStyle = '#1a1a1a';
-    if (direction === 'down' || direction === 'up') {
-        ctx.fillRect(6, 5 + bobY, 1, 1);
-        ctx.fillRect(9, 5 + bobY, 1, 1);
-    } else if (direction === 'left') {
-        ctx.fillRect(6, 5 + bobY, 1, 1);
-    } else {
-        ctx.fillRect(9, 5 + bobY, 1, 1);
-    }
-    
-    // Mouth
-    ctx.fillStyle = '#d4846a';
-    ctx.fillRect(7, 7 + bobY, 2, 1);
-    
-    return canvas;
-}
-
-// ============================================================
-// SPRITE: NPC CHARACTER
-// ============================================================
-function createNPCSprite(frame, direction, hairColor, shirtColor) {
-    const { canvas, ctx } = createPixelCanvas(16, 20);
-    
-    const bobY = Math.floor(Math.sin(frame * 0.3) * 1);
-    const legOffset = Math.floor(Math.sin(frame * 0.5) * 2);
-    
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath();
-    ctx.ellipse(8, 19, 5, 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Legs
-    ctx.fillStyle = '#34495e';
-    ctx.fillRect(5, 14 + legOffset, 2, 4);
-    ctx.fillRect(9, 14 - legOffset, 2, 4);
-    
-    // Shoes
-    ctx.fillStyle = '#2c2c2c';
-    ctx.fillRect(5, 17 + legOffset, 2, 1);
-    ctx.fillRect(9, 17 - legOffset, 2, 1);
-    
-    // Body
-    ctx.fillStyle = shirtColor;
-    ctx.fillRect(4, 8, 8, 7);
-    
-    // Arms
-    const armSwing = Math.floor(Math.sin(frame * 0.5) * 2);
-    ctx.fillStyle = shirtColor;
-    ctx.fillRect(2, 9 + armSwing, 2, 5);
-    ctx.fillRect(12, 9 - armSwing, 2, 5);
-    
-    // Hands
-    ctx.fillStyle = '#f5d0a0';
-    ctx.fillRect(2, 13 + armSwing, 2, 2);
-    ctx.fillRect(12, 13 - armSwing, 2, 2);
-    
-    // Head
-    ctx.fillStyle = '#f5d0a0';
-    ctx.fillRect(5, 2 + bobY, 6, 6);
-    
-    // Hair
-    ctx.fillStyle = hairColor;
-    ctx.fillRect(4, 0 + bobY, 8, 4);
-    ctx.fillRect(4, 2 + bobY, 1, 5);
-    ctx.fillRect(11, 2 + bobY, 1, 5);
-    
-    // Eyes
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(6, 5 + bobY, 1, 1);
-    ctx.fillRect(9, 5 + bobY, 1, 1);
-    
-    return canvas;
-}
-
-// ============================================================
-// SPRITE: CHERRY BLOSSOM TREE
-// ============================================================
-function createCherryTreeSprite() {
-    const { canvas, ctx } = createPixelCanvas(32, 40);
-    
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.beginPath();
-    ctx.ellipse(16, 38, 12, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Trunk
-    ctx.fillStyle = '#5c3a1e';
-    ctx.fillRect(13, 20, 6, 18);
-    
-    // Trunk texture
-    ctx.fillStyle = '#4a2e18';
-    ctx.fillRect(14, 22, 2, 14);
-    ctx.fillRect(17, 24, 1, 10);
-    
-    // Branches
-    ctx.fillStyle = '#5c3a1e';
-    ctx.fillRect(10, 18, 4, 2);
-    ctx.fillRect(18, 16, 4, 2);
-    
-    // Foliage layers (cherry blossom pink)
-    const colors = ['#ffb7c5', '#ff9eb5', '#ff85a2', '#ffc0cb'];
-    
-    // Bottom layer
-    ctx.fillStyle = colors[2];
-    ctx.beginPath();
-    ctx.moveTo(16, 2);
-    ctx.lineTo(2, 18);
-    ctx.lineTo(30, 18);
-    ctx.fill();
-    
-    // Middle layer
-    ctx.fillStyle = colors[1];
-    ctx.beginPath();
-    ctx.moveTo(16, 6);
-    ctx.lineTo(6, 20);
-    ctx.lineTo(26, 20);
-    ctx.fill();
-    
-    // Top layer
-    ctx.fillStyle = colors[0];
-    ctx.beginPath();
-    ctx.moveTo(16, 10);
-    ctx.lineTo(10, 22);
-    ctx.lineTo(22, 22);
-    ctx.fill();
-    
-    // Highlights
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    ctx.fillRect(12, 8, 4, 2);
-    ctx.fillRect(8, 14, 3, 2);
-    ctx.fillRect(18, 12, 3, 2);
-    
-    // Blossom details
-    ctx.fillStyle = '#fff';
-    for (let i = 0; i < 8; i++) {
-        const x = 8 + Math.floor(Math.random() * 16);
-        const y = 6 + Math.floor(Math.random() * 14);
-        ctx.fillRect(x, y, 2, 2);
-    }
-    
-    return canvas;
-}
-
-// ============================================================
-// SPRITE: GREEN TREE
-// ============================================================
-function createGreenTreeSprite() {
-    const { canvas, ctx } = createPixelCanvas(32, 40);
-    
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.beginPath();
-    ctx.ellipse(16, 38, 12, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Trunk
-    ctx.fillStyle = '#5c3a1e';
-    ctx.fillRect(13, 20, 6, 18);
-    
-    ctx.fillStyle = '#4a2e18';
-    ctx.fillRect(14, 22, 2, 14);
-    
-    // Foliage
-    const colors = ['#2d5a27', '#3a7a32', '#4a8a42', '#5a9a52'];
-    
-    ctx.fillStyle = colors[2];
-    ctx.beginPath();
-    ctx.moveTo(16, 2);
-    ctx.lineTo(2, 18);
-    ctx.lineTo(30, 18);
-    ctx.fill();
-    
-    ctx.fillStyle = colors[1];
-    ctx.beginPath();
-    ctx.moveTo(16, 6);
-    ctx.lineTo(6, 20);
-    ctx.lineTo(26, 20);
-    ctx.fill();
-    
-    ctx.fillStyle = colors[0];
-    ctx.beginPath();
-    ctx.moveTo(16, 10);
-    ctx.lineTo(10, 22);
-    ctx.lineTo(22, 22);
-    ctx.fill();
-    
-    // Highlights
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.fillRect(12, 8, 4, 2);
-    ctx.fillRect(8, 14, 3, 2);
-    
-    return canvas;
-}
-
-// ============================================================
-// SPRITE: SCHOOL BUILDING
-// ============================================================
-function createBuildingSprite(width, height, seed) {
-    const { canvas, ctx } = createPixelCanvas(width, height);
-    
-    const rng = seededRandom(seed);
-    
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    ctx.fillRect(4, 4, width - 4, height - 4);
-    
-    // Main wall (cream/beige)
-    ctx.fillStyle = '#f5f0e8';
-    ctx.fillRect(0, 0, width, height);
-    
-    // Wall texture (subtle)
-    ctx.fillStyle = 'rgba(0,0,0,0.03)';
-    for (let y = 0; y < height; y += 8) {
-        for (let x = (y % 16 === 0 ? 0 : 8); x < width; x += 16) {
-            ctx.fillRect(x, y, 14, 6);
-        }
-    }
-    
-    // Roof (Japanese style)
-    ctx.fillStyle = '#4a4a4a';
-    ctx.beginPath();
-    ctx.moveTo(-2, 0);
-    ctx.lineTo(width / 2, -12);
-    ctx.lineTo(width + 2, 0);
-    ctx.fill();
-    
-    // Roof detail
-    ctx.fillStyle = '#3a3a3a';
-    ctx.beginPath();
-    ctx.moveTo(width / 2, -12);
-    ctx.lineTo(width + 2, 0);
-    ctx.lineTo(width / 2, 0);
-    ctx.fill();
-    
-    // Windows
-    const winW = 12, winH = 14;
-    const cols = Math.floor((width - 20) / 20);
-    const rows = Math.floor((height - 30) / 24);
-    
-    for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-            const wx = 12 + c * 20;
-            const wy = 16 + r * 24;
-            
-            // Window frame
-            ctx.fillStyle = '#3a3a3a';
-            ctx.fillRect(wx - 1, wy - 1, winW + 2, winH + 2);
-            
-            // Glass
-            ctx.fillStyle = '#87ceeb';
-            ctx.fillRect(wx, wy, winW, winH);
-            
-            // Glass reflection
-            ctx.fillStyle = 'rgba(255,255,255,0.4)';
-            ctx.fillRect(wx + 1, wy + 1, 4, 4);
-            
-            // Cross bars
-            ctx.fillStyle = '#3a3a3a';
-            ctx.fillRect(wx + 5, wy, 2, winH);
-            ctx.fillRect(wx, wy + 6, winW, 2);
-        }
-    }
-    
-    // Door
-    const doorX = Math.floor(width / 2) - 8;
-    const doorY = height - 24;
-    
-    ctx.fillStyle = '#5c3a1e';
-    ctx.fillRect(doorX, doorY, 16, 24);
-    
-    ctx.fillStyle = '#4a2e18';
-    ctx.fillRect(doorX - 1, doorY - 1, 18, 2);
-    ctx.fillRect(doorX - 1, doorY, 2, 24);
-    ctx.fillRect(doorX + 15, doorY, 2, 24);
-    
-    // Door window
-    ctx.fillStyle = '#87ceeb';
-    ctx.fillRect(doorX + 3, doorY + 3, 10, 8);
-    
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-    ctx.fillRect(doorX + 4, doorY + 4, 3, 3);
-    
-    // Door handle
-    ctx.fillStyle = '#c0c0c0';
-    ctx.fillRect(doorX + 12, doorY + 14, 2, 4);
-    
-    return canvas;
-}
-
-// ============================================================
-// SPRITE: VENDING MACHINE
-// ============================================================
-function createVendingMachineSprite() {
-    const { canvas, ctx } = createPixelCanvas(16, 24);
-    
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.fillRect(2, 22, 12, 2);
-    
-    // Body
-    ctx.fillStyle = '#4488ff';
-    ctx.fillRect(0, 0, 16, 24);
-    
-    // Display area
-    ctx.fillStyle = '#222';
-    ctx.fillRect(2, 2, 12, 14);
-    
-    // Drinks inside
-    const drinkColors = ['#ff4444', '#44ff44', '#ffaa44', '#ff44aa', '#44aaff'];
-    for (let i = 0; i < 3; i++) {
-        for (let j = 0; j < 4; j++) {
-            ctx.fillStyle = drinkColors[(i + j) % drinkColors.length];
-            ctx.fillRect(3 + j * 3, 3 + i * 4, 2, 3);
-        }
-    }
-    
-    // Selection buttons
-    ctx.fillStyle = '#ff4444';
-    for (let i = 0; i < 3; i++) {
-        ctx.fillRect(2 + i * 5, 18, 3, 2);
-    }
-    
-    // Coin slot
-    ctx.fillStyle = '#c0c0c0';
-    ctx.fillRect(4, 21, 3, 2);
-    
-    // Dispenser
-    ctx.fillStyle = '#333';
-    ctx.fillRect(2, 22, 12, 2);
-    
-    return canvas;
-}
-
-// ============================================================
-// SPRITE: LANTERN
-// ============================================================
-function createLanternSprite() {
-    const { canvas, ctx } = createPixelCanvas(12, 20);
-    
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.beginPath();
-    ctx.ellipse(6, 19, 4, 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Post
-    ctx.fillStyle = '#333';
-    ctx.fillRect(5, 8, 2, 12);
-    
-    // Lantern body
-    ctx.fillStyle = '#ff4444';
-    ctx.fillRect(2, 2, 8, 8);
-    
-    // Lantern top/bottom
-    ctx.fillStyle = '#333';
-    ctx.fillRect(2, 1, 8, 1);
-    ctx.fillRect(2, 10, 8, 1);
-    
-    // Glow
-    ctx.fillStyle = 'rgba(255, 200, 100, 0.3)';
-    ctx.beginPath();
-    ctx.arc(6, 6, 8, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Inner light
-    ctx.fillStyle = '#ffcc66';
-    ctx.fillRect(4, 4, 4, 4);
-    
-    return canvas;
-}
-
-// ============================================================
-// SPRITE: BENCH
-// ============================================================
-function createBenchSprite() {
-    const { canvas, ctx } = createPixelCanvas(20, 12);
-    
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.fillRect(2, 10, 16, 2);
-    
-    // Seat
-    ctx.fillStyle = '#8b6914';
-    ctx.fillRect(2, 6, 16, 3);
-    
-    // Wood grain
-    ctx.fillStyle = 'rgba(0,0,0,0.1)';
-    ctx.fillRect(2, 7, 16, 1);
-    
-    // Legs
-    ctx.fillStyle = '#666';
-    ctx.fillRect(3, 9, 2, 3);
-    ctx.fillRect(15, 9, 2, 3);
-    
-    // Back
-    ctx.fillStyle = '#8b6914';
-    ctx.fillRect(2, 2, 16, 3);
-    
-    // Back supports
-    ctx.fillStyle = '#666';
-    ctx.fillRect(3, 5, 2, 2);
-    ctx.fillRect(15, 5, 2, 2);
-    
-    return canvas;
-}
-
-// ============================================================
-// SPRITE: FENCE
-// ============================================================
-function createFenceSprite() {
-    const { canvas, ctx } = createPixelCanvas(16, 12);
-    
-    // Posts
-    ctx.fillStyle = '#f5f5f5';
-    ctx.fillRect(2, 2, 2, 10);
-    ctx.fillRect(12, 2, 2, 10);
-    
-    // Rails
-    ctx.fillStyle = '#e8e8e8';
-    ctx.fillRect(4, 3, 8, 2);
-    ctx.fillRect(4, 7, 8, 2);
-    
-    // Post tops
-    ctx.fillStyle = '#ddd';
-    ctx.fillRect(1, 1, 4, 2);
-    ctx.fillRect(11, 1, 4, 2);
-    
-    return canvas;
-}
-
-// ============================================================
 // SEEDED RANDOM
 // ============================================================
 function seededRandom(seed) {
@@ -562,22 +51,421 @@ function seededRandom(seed) {
 }
 
 // ============================================================
+// PIXEL ART DRAWING HELPERS
+// ============================================================
+function p(ctx, x, y, w, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.floor(x), Math.floor(y), w, h);
+}
+
+// ============================================================
+// DRAW FUNCTIONS (Direct pixel art rendering)
+// ============================================================
+
+function drawGrassTile(ctx, x, y, size, seed) {
+    const rng = seededRandom(seed);
+    const colors = ['#4a7c59', '#3d6b4e', '#5a8f6a', '#4d7a5c'];
+    p(ctx, x, y, size, size, colors[Math.floor(rng() * colors.length)]);
+    
+    // Grass blades
+    p(ctx, x + 4, y + 8, 2, 4, 'rgba(0,0,0,0.1)');
+    p(ctx, x + 12, y + 20, 2, 3, 'rgba(0,0,0,0.1)');
+    p(ctx, x + 24, y + 12, 2, 4, 'rgba(0,0,0,0.1)');
+}
+
+function drawPathTile(ctx, x, y, size, seed) {
+    const rng = seededRandom(seed);
+    p(ctx, x, y, size, size, '#c4a882');
+    
+    // Path texture
+    for (let i = 0; i < 5; i++) {
+        p(ctx, x + rng() * size, y + rng() * size, 3, 2, '#b89872');
+    }
+}
+
+function drawStoneTile(ctx, x, y, size, seed) {
+    const rng = seededRandom(seed);
+    p(ctx, x, y, size, size, '#888');
+    
+    for (let i = 0; i < 4; i++) {
+        p(ctx, x + rng() * size, y + rng() * size, 4, 3, '#777');
+    }
+}
+
+function drawWaterTile(ctx, x, y, size, seed, time) {
+    p(ctx, x, y, size, size, '#4a90d9');
+    
+    // Animated ripples
+    const offset = Math.sin(time * 0.05 + seed) * 3;
+    p(ctx, x + 4 + offset, y + 8, 10, 2, 'rgba(255,255,255,0.4)');
+    p(ctx, x + 14 - offset, y + 20, 8, 2, 'rgba(255,255,255,0.3)');
+}
+
+function drawBridgeTile(ctx, x, y, size) {
+    p(ctx, x, y, size, size, '#8b6914');
+    
+    // Wood planks
+    p(ctx, x, y + 4, size, 2, 'rgba(0,0,0,0.15)');
+    p(ctx, x, y + 12, size, 2, 'rgba(0,0,0,0.15)');
+    p(ctx, x, y + 20, size, 2, 'rgba(0,0,0,0.15)');
+    
+    // Railings
+    p(ctx, x + 2, y, 2, size, '#666');
+    p(ctx, x + size - 4, y, 2, size, '#666');
+}
+
+function drawCherryTree(ctx, x, y, size, seed) {
+    const rng = seededRandom(seed);
+    
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(x + size/2 + 4, y + size - 2, 14, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Trunk
+    p(ctx, x + 12, y + 16, 8, 16, '#5c3a1e');
+    p(ctx, x + 13, y + 18, 3, 12, '#4a2e18');
+    
+    // Branches
+    p(ctx, x + 8, y + 14, 6, 3, '#5c3a1e');
+    p(ctx, x + 18, y + 12, 6, 3, '#5c3a1e');
+    
+    // Foliage layers (cherry blossom)
+    const colors = ['#ffb7c5', '#ff9eb5', '#ff85a2', '#ffc0cb'];
+    
+    // Bottom layer
+    p(ctx, x + 2, y + 6, 28, 14, colors[2]);
+    ctx.fillStyle = colors[2];
+    ctx.beginPath();
+    ctx.moveTo(x + 16, y);
+    ctx.lineTo(x + 2, y + 16);
+    ctx.lineTo(x + 30, y + 16);
+    ctx.fill();
+    
+    // Middle layer
+    ctx.fillStyle = colors[1];
+    ctx.beginPath();
+    ctx.moveTo(x + 16, y + 4);
+    ctx.lineTo(x + 6, y + 18);
+    ctx.lineTo(x + 26, y + 18);
+    ctx.fill();
+    
+    // Top layer
+    ctx.fillStyle = colors[0];
+    ctx.beginPath();
+    ctx.moveTo(x + 16, y + 8);
+    ctx.lineTo(x + 10, y + 20);
+    ctx.lineTo(x + 22, y + 20);
+    ctx.fill();
+    
+    // Highlights
+    p(ctx, x + 12, y + 6, 4, 2, 'rgba(255,255,255,0.5)');
+    p(ctx, x + 8, y + 12, 3, 2, 'rgba(255,255,255,0.3)');
+    
+    // Falling petals
+    for (let i = 0; i < 3; i++) {
+        const px = x + 4 + ((seed * 7 + i * 13) % 24);
+        const py = y + 8 + ((seed * 11 + i * 17) % 16);
+        p(ctx, px, py, 2, 2, '#ffb7c5');
+    }
+}
+
+function drawGreenTree(ctx, x, y, size, seed) {
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(x + size/2 + 4, y + size - 2, 14, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Trunk
+    p(ctx, x + 12, y + 16, 8, 16, '#5c3a1e');
+    p(ctx, x + 13, y + 18, 3, 12, '#4a2e18');
+    
+    // Foliage
+    const colors = ['#2d5a27', '#3a7a32', '#4a8a42'];
+    
+    ctx.fillStyle = colors[2];
+    ctx.beginPath();
+    ctx.moveTo(x + 16, y);
+    ctx.lineTo(x + 2, y + 16);
+    ctx.lineTo(x + 30, y + 16);
+    ctx.fill();
+    
+    ctx.fillStyle = colors[1];
+    ctx.beginPath();
+    ctx.moveTo(x + 16, y + 4);
+    ctx.lineTo(x + 6, y + 18);
+    ctx.lineTo(x + 26, y + 18);
+    ctx.fill();
+    
+    ctx.fillStyle = colors[0];
+    ctx.beginPath();
+    ctx.moveTo(x + 16, y + 8);
+    ctx.lineTo(x + 10, y + 20);
+    ctx.lineTo(x + 22, y + 20);
+    ctx.fill();
+    
+    // Highlight
+    p(ctx, x + 12, y + 6, 4, 2, 'rgba(255,255,255,0.2)');
+}
+
+function drawBuilding(ctx, x, y, w, h, seed) {
+    const rng = seededRandom(seed);
+    
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(x + 6, y + 6, w, h);
+    
+    // Wall
+    p(ctx, x, y, w, h, '#f5f0e8');
+    
+    // Wall texture
+    p(ctx, x + 2, y + 2, w - 4, h - 4, 'rgba(0,0,0,0.02)');
+    
+    // Roof
+    ctx.fillStyle = '#4a4a4a';
+    ctx.beginPath();
+    ctx.moveTo(x - 4, y);
+    ctx.lineTo(x + w/2, y - 16);
+    ctx.lineTo(x + w + 4, y);
+    ctx.fill();
+    
+    // Roof shadow
+    ctx.fillStyle = '#3a3a3a';
+    ctx.beginPath();
+    ctx.moveTo(x + w/2, y - 16);
+    ctx.lineTo(x + w + 4, y);
+    ctx.lineTo(x + w/2, y);
+    ctx.fill();
+    
+    // Windows
+    const winW = 14, winH = 16;
+    const cols = Math.floor((w - 24) / 22);
+    const rows = Math.floor((h - 32) / 26);
+    
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const wx = x + 14 + c * 22;
+            const wy = y + 18 + r * 26;
+            
+            // Frame
+            p(ctx, wx - 1, wy - 1, winW + 2, winH + 2, '#3a3a3a');
+            
+            // Glass
+            p(ctx, wx, wy, winW, winH, '#87ceeb');
+            
+            // Reflection
+            p(ctx, wx + 1, wy + 1, 5, 5, 'rgba(255,255,255,0.5)');
+            
+            // Cross
+            p(ctx, wx + 6, wy, 2, winH, '#3a3a3a');
+            p(ctx, wx, wy + 7, winW, 2, '#3a3a3a');
+        }
+    }
+    
+    // Door
+    const doorX = x + Math.floor(w/2) - 10;
+    const doorY = y + h - 28;
+    
+    p(ctx, doorX, doorY, 20, 28, '#5c3a1e');
+    p(ctx, doorX - 1, doorY - 1, 22, 2, '#4a2e18');
+    p(ctx, doorX - 1, doorY, 2, 28, '#4a2e18');
+    p(ctx, doorX + 19, doorY, 2, 28, '#4a2e18');
+    
+    // Door window
+    p(ctx, doorX + 4, doorY + 4, 12, 10, '#87ceeb');
+    p(ctx, doorX + 5, doorY + 5, 4, 4, 'rgba(255,255,255,0.4)');
+    
+    // Handle
+    p(ctx, doorX + 15, doorY + 18, 3, 5, '#c0c0c0');
+}
+
+function drawCharacter(ctx, x, y, frame, direction, hairColor, shirtColor, scale = 1) {
+    const s = scale;
+    const bobY = Math.floor(Math.sin(frame * 0.3) * 1);
+    const legOff = Math.floor(Math.sin(frame * 0.5) * 2);
+    const armSwing = Math.floor(Math.sin(frame * 0.5) * 2);
+    
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 20 * s, 6 * s, 3 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Legs
+    p(ctx, x - 3 * s, y + 12 * s + legOff * s, 3 * s, 6 * s, '#2c3e50');
+    p(ctx, x + 1 * s, y + 12 * s - legOff * s, 3 * s, 6 * s, '#2c3e50');
+    
+    // Shoes
+    p(ctx, x - 3 * s, y + 17 * s + legOff * s, 3 * s, 2 * s, '#1a1a1a');
+    p(ctx, x + 1 * s, y + 17 * s - legOff * s, 3 * s, 2 * s, '#1a1a1a');
+    
+    // Body
+    p(ctx, x - 4 * s, y + 6 * s, 9 * s, 8 * s, shirtColor);
+    
+    // Arms
+    p(ctx, x - 6 * s, y + 7 * s + armSwing * s, 3 * s, 6 * s, shirtColor);
+    p(ctx, x + 4 * s, y + 7 * s - armSwing * s, 3 * s, 6 * s, shirtColor);
+    
+    // Hands
+    p(ctx, x - 6 * s, y + 12 * s + armSwing * s, 3 * s, 2 * s, '#f5d0a0');
+    p(ctx, x + 4 * s, y + 12 * s - armSwing * s, 3 * s, 2 * s, '#f5d0a0');
+    
+    // Head
+    p(ctx, x - 3 * s, y + bobY * s, 7 * s, 7 * s, '#f5d0a0');
+    
+    // Hair
+    p(ctx, x - 4 * s, y - 2 * s + bobY * s, 9 * s, 5 * s, hairColor);
+    p(ctx, x - 4 * s, y + bobY * s, 2 * s, 5 * s, hairColor);
+    p(ctx, x + 3 * s, y + bobY * s, 2 * s, 5 * s, hairColor);
+    
+    // Hair highlight
+    p(ctx, x - 1 * s, y - 1 * s + bobY * s, 4 * s, 1 * s, 'rgba(255,255,255,0.3)');
+    
+    // Eyes
+    p(ctx, x - 1 * s, y + 3 * s + bobY * s, 1 * s, 1 * s, '#1a1a1a');
+    p(ctx, x + 2 * s, y + 3 * s + bobY * s, 1 * s, 1 * s, '#1a1a1a');
+    
+    // Mouth
+    p(ctx, x, y + 5 * s + bobY * s, 2 * s, 1 * s, '#d4846a');
+}
+
+function drawNPC(ctx, x, y, frame, direction, hairColor, shirtColor, name) {
+    drawCharacter(ctx, x, y, frame, direction, hairColor, shirtColor, 1);
+    
+    // Name tag
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'center';
+    const tw = ctx.measureText(name).width;
+    ctx.fillRect(x - tw/2 - 5, y - 28, tw + 10, 16);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(name, x, y - 17);
+}
+
+function drawVendingMachine(ctx, x, y) {
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(x + 2, y + 22, 14, 3);
+    
+    // Body
+    p(ctx, x, y, 18, 24, '#4488ff');
+    
+    // Display
+    p(ctx, x + 2, y + 2, 14, 16, '#222');
+    
+    // Drinks
+    const drinks = ['#ff4444', '#44ff44', '#ffaa44', '#ff44aa', '#44aaff'];
+    for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 4; c++) {
+            p(ctx, x + 3 + c * 3, y + 3 + r * 4, 2, 3, drinks[(r + c) % drinks.length]);
+        }
+    }
+    
+    // Buttons
+    p(ctx, x + 2, y + 20, 4, 2, '#ff4444');
+    p(ctx, x + 7, y + 20, 4, 2, '#44ff44');
+    p(ctx, x + 12, y + 20, 4, 2, '#ffaa44');
+    
+    // Coin slot
+    p(ctx, x + 6, y + 22, 4, 2, '#c0c0c0');
+}
+
+function drawLantern(ctx, x, y, time) {
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(x + 6, y + 18, 5, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Post
+    p(ctx, x + 5, y + 8, 2, 12, '#333');
+    
+    // Lantern body
+    p(ctx, x + 2, y + 2, 8, 8, '#ff4444');
+    
+    // Top/bottom
+    p(ctx, x + 2, y + 1, 8, 1, '#333');
+    p(ctx, x + 2, y + 10, 8, 1, '#333');
+    
+    // Glow
+    const glowIntensity = 0.3 + Math.sin(time * 0.02) * 0.1;
+    ctx.fillStyle = `rgba(255, 200, 100, ${glowIntensity})`;
+    ctx.beginPath();
+    ctx.arc(x + 6, y + 6, 10, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Inner light
+    p(ctx, x + 4, y + 4, 4, 4, '#ffcc66');
+}
+
+function drawBench(ctx, x, y) {
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(x + 2, y + 10, 18, 2);
+    
+    // Seat
+    p(ctx, x + 2, y + 6, 18, 3, '#8b6914');
+    p(ctx, x + 2, y + 7, 18, 1, 'rgba(0,0,0,0.1)');
+    
+    // Legs
+    p(ctx, x + 3, y + 9, 2, 3, '#666');
+    p(ctx, x + 17, y + 9, 2, 3, '#666');
+    
+    // Back
+    p(ctx, x + 2, y + 2, 18, 3, '#8b6914');
+    
+    // Supports
+    p(ctx, x + 3, y + 5, 2, 2, '#666');
+    p(ctx, x + 17, y + 5, 2, 2, '#666');
+}
+
+function drawFence(ctx, x, y) {
+    // Posts
+    p(ctx, x + 2, y + 2, 2, 10, '#f5f5f5');
+    p(ctx, x + 14, y + 2, 2, 10, '#f5f5f5');
+    
+    // Rails
+    p(ctx, x + 4, y + 3, 10, 2, '#e8e8e8');
+    p(ctx, x + 4, y + 7, 10, 2, '#e8e8e8');
+    
+    // Tops
+    p(ctx, x + 1, y + 1, 4, 2, '#ddd');
+    p(ctx, x + 13, y + 1, 4, 2, '#ddd');
+}
+
+function drawFlower(ctx, x, y, seed) {
+    const rng = seededRandom(seed);
+    const colors = ['#ff6b8a', '#ffaa44', '#ff44aa', '#ffdd44', '#aa66ff'];
+    const color = colors[Math.floor(rng() * colors.length)];
+    
+    // Stem
+    p(ctx, x - 1, y, 2, 6, '#3a7a32');
+    
+    // Petals
+    for (let i = 0; i < 5; i++) {
+        const angle = (i / 5) * Math.PI * 2;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x + Math.cos(angle) * 3, y - 2 + Math.sin(angle) * 3, 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // Center
+    ctx.fillStyle = '#ffdd44';
+    ctx.beginPath();
+    ctx.arc(x, y - 2, 2, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// ============================================================
 // TILE TYPES
 // ============================================================
 const TILE = {
-    GRASS: 0,
-    PATH: 1,
-    STONE: 2,
-    BUILDING: 3,
-    CHERRY_TREE: 4,
-    GREEN_TREE: 5,
-    WATER: 6,
-    FENCE: 7,
-    VENDING: 8,
-    LANTERN: 9,
-    BENCH: 10,
-    FLOWER: 11,
-    BRIDGE: 12
+    GRASS: 0, PATH: 1, STONE: 2, BUILDING: 3,
+    CHERRY_TREE: 4, GREEN_TREE: 5, WATER: 6,
+    FENCE: 7, VENDING: 8, LANTERN: 9, BENCH: 10, FLOWER: 11, BRIDGE: 12
 };
 
 const TILE_SIZE = 32;
@@ -596,17 +484,14 @@ function generateMap(width, height, seed) {
         }
     }
     
-    // Main paths
     const midX = Math.floor(width / 2);
     const midY = Math.floor(height / 2);
     
-    // Horizontal path
+    // Paths
     for (let x = 0; x < width; x++) {
         map[midY][x] = TILE.PATH;
         map[midY + 1][x] = TILE.PATH;
     }
-    
-    // Vertical path
     for (let y = 0; y < height; y++) {
         map[y][midX] = TILE.PATH;
         map[y][midX + 1] = TILE.PATH;
@@ -614,8 +499,8 @@ function generateMap(width, height, seed) {
     
     // Stone walkways
     for (let x = 2; x < width - 2; x++) {
-        if (map[midY - 2][x] === TILE.GRASS && rng() > 0.7) map[midY - 2][x] = TILE.STONE;
-        if (map[midY + 3][x] === TILE.GRASS && rng() > 0.7) map[midY + 3][x] = TILE.STONE;
+        if (map[midY - 2]?.[x] === TILE.GRASS && rng() > 0.7) map[midY - 2][x] = TILE.STONE;
+        if (map[midY + 3]?.[x] === TILE.GRASS && rng() > 0.7) map[midY + 3][x] = TILE.STONE;
     }
     
     // Buildings
@@ -635,14 +520,13 @@ function generateMap(width, height, seed) {
         }
     }
     
-    // Cherry blossom trees
+    // Trees
     for (let i = 0; i < 15; i++) {
         const tx = Math.floor(rng() * width);
         const ty = Math.floor(rng() * height);
         if (map[ty][tx] === TILE.GRASS) map[ty][tx] = TILE.CHERRY_TREE;
     }
     
-    // Green trees
     for (let i = 0; i < 10; i++) {
         const tx = Math.floor(rng() * width);
         const ty = Math.floor(rng() * height);
@@ -656,15 +540,15 @@ function generateMap(width, height, seed) {
         if (map[fy][fx] === TILE.GRASS) map[fy][fx] = TILE.FLOWER;
     }
     
-    // Fences along paths
+    // Fences
     for (let x = 0; x < width; x += 3) {
-        if (map[midY - 1][x] === TILE.GRASS) map[midY - 1][x] = TILE.FENCE;
-        if (map[midY + 2][x] === TILE.GRASS) map[midY + 2][x] = TILE.FENCE;
+        if (map[midY - 1]?.[x] === TILE.GRASS) map[midY - 1][x] = TILE.FENCE;
+        if (map[midY + 2]?.[x] === TILE.GRASS) map[midY + 2][x] = TILE.FENCE;
     }
     
     // Lanterns
     for (let x = 0; x < width; x += 5) {
-        if (map[midY - 1][x] === TILE.GRASS) map[midY - 1][x] = TILE.LANTERN;
+        if (map[midY - 1]?.[x] === TILE.GRASS) map[midY - 1][x] = TILE.LANTERN;
     }
     
     // Benches
@@ -675,18 +559,16 @@ function generateMap(width, height, seed) {
     }
     
     // Vending machines
-    map[midY][3] = TILE.VENDING;
-    map[midY][midX + 5] = TILE.VENDING;
+    if (midY < height) map[midY][3] = TILE.VENDING;
+    if (midY < height && midX + 5 < width) map[midY][midX + 5] = TILE.VENDING;
     
-    // Water feature
+    // Water
     for (let x = 8; x < 12; x++) {
         for (let y = 8; y < 11; y++) {
-            if (map[y][x] === TILE.GRASS) map[y][x] = TILE.WATER;
+            if (map[y]?.[x] === TILE.GRASS) map[y][x] = TILE.WATER;
         }
     }
-    
-    // Bridge over water
-    if (map[9][10] === TILE.WATER) map[9][10] = TILE.BRIDGE;
+    if (map[9]?.[10] === TILE.WATER) map[9][10] = TILE.BRIDGE;
     
     return { map, buildings };
 }
@@ -695,50 +577,30 @@ function generateMap(width, height, seed) {
 // GAME STATE
 // ============================================================
 const game = {
-    player: { x: 0, y: 0, dir: 'down', frame: 0, moving: false, speed: 2.5, running: false },
+    player: { x: 0, y: 0, dir: 'down', frame: 0, moving: false, speed: 2.5 },
     camera: { x: 0, y: 0 },
     map: null,
     mapWidth: 50,
     mapHeight: 40,
     buildings: [],
     npcs: [],
-    particles: [],
     time: 0,
     keys: {},
-    seed: 42,
-    sprites: {
-        player: {},
-        npcs: [],
-        cherryTree: null,
-        greenTree: null,
-        vending: null,
-        lantern: null,
-        bench: null,
-        fence: null
-    }
+    seed: 42
 };
 
 // ============================================================
-// INITIALIZATION
+// INIT
 // ============================================================
 function initGame() {
     const result = generateMap(game.mapWidth, game.mapHeight, game.seed);
     game.map = result.map;
     game.buildings = result.buildings;
     
-    // Place player
     game.player.x = Math.floor(game.mapWidth / 2) * TILE_SIZE;
     game.player.y = Math.floor(game.mapHeight / 2) * TILE_SIZE;
     
-    // Pre-generate sprites
-    game.sprites.cherryTree = createCherryTreeSprite();
-    game.sprites.greenTree = createGreenTreeSprite();
-    game.sprites.vending = createVendingMachineSprite();
-    game.sprites.lantern = createLanternSprite();
-    game.sprites.bench = createBenchSprite();
-    game.sprites.fence = createFenceSprite();
-    
-    // Generate NPCs
+    // NPCs
     const npcData = [
         { hair: '#2a1a0a', shirt: '#ff4444', name: 'Yuki' },
         { hair: '#ff6b6b', shirt: '#44bb88', name: 'Haruto' },
@@ -753,11 +615,10 @@ function initGame() {
         do {
             nx = Math.floor(rng() * game.mapWidth);
             ny = Math.floor(rng() * game.mapHeight);
-        } while (game.map[ny][nx] !== TILE.PATH && game.map[ny][nx] !== TILE.GRASS && game.map[ny][nx] !== TILE.STONE);
+        } while (game.map[ny]?.[nx] !== TILE.PATH && game.map[ny]?.[nx] !== TILE.GRASS && game.map[ny]?.[nx] !== TILE.STONE);
         
         game.npcs.push({
-            x: nx * TILE_SIZE,
-            y: ny * TILE_SIZE,
+            x: nx * TILE_SIZE, y: ny * TILE_SIZE,
             ...npcData[i],
             frame: Math.floor(rng() * 100),
             dir: ['up', 'down', 'left', 'right'][Math.floor(rng() * 4)],
@@ -770,9 +631,7 @@ function initGame() {
 // ============================================================
 // INPUT
 // ============================================================
-window.addEventListener('keydown', e => {
-    game.keys[e.key.toLowerCase()] = true;
-});
+window.addEventListener('keydown', e => game.keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', e => game.keys[e.key.toLowerCase()] = false);
 
 // ============================================================
@@ -782,8 +641,7 @@ function update() {
     const p = game.player;
     let dx = 0, dy = 0;
     
-    p.running = game.keys['shift'];
-    const speed = p.running ? p.speed * 1.8 : p.speed;
+    const speed = game.keys['shift'] ? p.speed * 1.8 : p.speed;
     
     if (game.keys['w'] || game.keys['arrowup']) { dy = -1; p.dir = 'up'; }
     if (game.keys['s'] || game.keys['arrowdown']) { dy = 1; p.dir = 'down'; }
@@ -792,7 +650,7 @@ function update() {
     
     if (dx !== 0 || dy !== 0) {
         p.moving = true;
-        p.frame += p.running ? 0.25 : 0.15;
+        p.frame += game.keys['shift'] ? 0.25 : 0.15;
         
         const newX = p.x + dx * speed;
         const newY = p.y + dy * speed;
@@ -811,7 +669,7 @@ function update() {
         p.moving = false;
     }
     
-    // Update NPCs
+    // NPCs
     for (const npc of game.npcs) {
         npc.frame += 0.1;
         npc.moveTimer++;
@@ -839,7 +697,6 @@ function update() {
     game.camera.x = p.x - canvas.width / 2;
     game.camera.y = p.y - canvas.height / 2;
     
-    // Update UI
     document.getElementById('coords').textContent = `Position: ${Math.floor(p.x)}, ${Math.floor(p.y)}`;
     
     game.time++;
@@ -850,202 +707,78 @@ function update() {
 // ============================================================
 function render() {
     const cam = game.camera;
-    const tileSize = TILE_SIZE;
+    const ts = TILE_SIZE;
     
     // Sky
-    ctx.fillStyle = '#87ceeb';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    p(ctx, 0, 0, canvas.width, canvas.height, '#87ceeb');
     
     ctx.save();
     ctx.translate(-Math.floor(cam.x), -Math.floor(cam.y));
     
-    const startX = Math.max(0, Math.floor(cam.x / tileSize));
-    const startY = Math.max(0, Math.floor(cam.y / tileSize));
-    const endX = Math.min(game.mapWidth, Math.ceil((cam.x + canvas.width) / tileSize) + 1);
-    const endY = Math.min(game.mapHeight, Math.ceil((cam.y + canvas.height) / tileSize) + 1);
+    const startX = Math.max(0, Math.floor(cam.x / ts));
+    const startY = Math.max(0, Math.floor(cam.y / ts));
+    const endX = Math.min(game.mapWidth, Math.ceil((cam.x + canvas.width) / ts) + 1);
+    const endY = Math.min(game.mapHeight, Math.ceil((cam.y + canvas.height) / ts) + 1);
     
-    // Collect entities for depth sorting
+    // Collect for depth sorting
     const entities = [];
     
-    // Draw ground tiles
+    // Ground
     for (let y = startY; y < endY; y++) {
         for (let x = startX; x < endX; x++) {
             const tile = game.map[y][x];
-            const px = x * tileSize;
-            const py = y * tileSize;
+            const px = x * ts;
+            const py = y * ts;
+            const seed = x * 1000 + y;
             
-            // Grass base
-            const rng = seededRandom(x * 1000 + y);
-            const grassColors = ['#4a7c59', '#3d6b4e', '#5a8f6a', '#4d7a5c'];
-            ctx.fillStyle = grassColors[Math.floor(rng() * grassColors.length)];
-            ctx.fillRect(px, py, tileSize, tileSize);
+            drawGrassTile(ctx, px, py, ts, seed);
             
-            // Grass detail
-            ctx.fillStyle = 'rgba(0,0,0,0.08)';
-            for (let i = 0; i < 4; i++) {
-                ctx.fillRect(px + rng() * tileSize, py + rng() * tileSize, 2, 3);
-            }
-            
-            // Add to entities list for depth sorting
-            if (tile === TILE.PATH || tile === TILE.STONE || tile === TILE.WATER || tile === TILE.BRIDGE ||
-                tile === TILE.FENCE || tile === TILE.LANTERN || tile === TILE.BENCH || tile === TILE.VENDING ||
-                tile === TILE.FLOWER || tile === TILE.CHERRY_TREE || tile === TILE.GREEN_TREE || tile === TILE.BUILDING) {
-                entities.push({ x: px, y: py, type: tile, seed: x * 1000 + y });
+            if (tile !== TILE.GRASS) {
+                entities.push({ x: px, y: py, type: tile, seed });
             }
         }
     }
     
-    // Sort by Y for depth
+    // Sort by Y
     entities.sort((a, b) => a.y - b.y);
     
     // Draw entities
     for (const e of entities) {
         switch (e.type) {
-            case TILE.PATH:
-                drawPath(e.x, e.y, tileSize, e.seed);
-                break;
-            case TILE.STONE:
-                drawStonePath(e.x, e.y, tileSize, e.seed);
-                break;
-            case TILE.WATER:
-                drawWater(e.x, e.y, tileSize, e.seed);
-                break;
-            case TILE.BRIDGE:
-                drawBridge(e.x, e.y, tileSize);
-                break;
-            case TILE.BUILDING:
-                // Skip - drawn separately
-                break;
-            case TILE.CHERRY_TREE:
-                ctx.drawImage(game.sprites.cherryTree, e.x - 8, e.y - 24);
-                break;
-            case TILE.GREEN_TREE:
-                ctx.drawImage(game.sprites.greenTree, e.x - 8, e.y - 24);
-                break;
-            case TILE.FENCE:
-                ctx.drawImage(game.sprites.fence, e.x + 8, e.y + 10);
-                break;
-            case TILE.LANTERN:
-                ctx.drawImage(game.sprites.lantern, e.x + 10, e.y - 4);
-                break;
-            case TILE.BENCH:
-                ctx.drawImage(game.sprites.bench, e.x + 6, e.y + 10);
-                break;
-            case TILE.VENDING:
-                ctx.drawImage(game.sprites.vending, e.x + 8, e.y - 8);
-                break;
-            case TILE.FLOWER:
-                drawFlower(e.x + 16, e.y + 16, e.seed);
-                break;
+            case TILE.PATH: drawPathTile(ctx, e.x, e.y, ts, e.seed); break;
+            case TILE.STONE: drawStoneTile(ctx, e.x, e.y, ts, e.seed); break;
+            case TILE.WATER: drawWaterTile(ctx, e.x, e.y, ts, e.seed, game.time); break;
+            case TILE.BRIDGE: drawBridgeTile(ctx, e.x, e.y, ts); break;
+            case TILE.CHERRY_TREE: drawCherryTree(ctx, e.x, e.y, ts, e.seed); break;
+            case TILE.GREEN_TREE: drawGreenTree(ctx, e.x, e.y, ts, e.seed); break;
+            case TILE.FENCE: drawFence(ctx, e.x + 8, e.y + 10); break;
+            case TILE.LANTERN: drawLantern(ctx, e.x + 10, e.y - 4, game.time); break;
+            case TILE.BENCH: drawBench(ctx, e.x + 6, e.y + 10); break;
+            case TILE.VENDING: drawVendingMachine(ctx, e.x + 8, e.y - 8); break;
+            case TILE.FLOWER: drawFlower(ctx, e.x + 16, e.y + 16, e.seed); break;
         }
     }
     
-    // Draw buildings
+    // Buildings
     for (const b of game.buildings) {
-        const sprite = createBuildingSprite(b.w * tileSize, b.h * tileSize, b.x * 100 + b.y);
-        ctx.drawImage(sprite, b.x * tileSize, b.y * tileSize);
+        drawBuilding(ctx, b.x * ts, b.y * ts, b.w * ts, b.h * ts, b.x * 100 + b.y);
     }
     
-    // Draw NPCs
+    // NPCs
     for (const npc of game.npcs) {
-        const sprite = createNPCSprite(npc.frame, npc.dir, npc.hair, npc.shirt);
-        ctx.drawImage(sprite, npc.x - 8, npc.y - 12);
-        
-        // Name tag
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.font = '10px monospace';
-        ctx.textAlign = 'center';
-        const tw = ctx.measureText(npc.name).width;
-        ctx.fillRect(npc.x - tw/2 - 4, npc.y - 28, tw + 8, 14);
-        ctx.fillStyle = '#fff';
-        ctx.fillText(npc.name, npc.x, npc.y - 18);
+        drawNPC(ctx, npc.x, npc.y, npc.frame, npc.dir, npc.hair, npc.shirt, npc.name);
     }
     
-    // Draw player
-    const playerSprite = createPlayerSprite(game.player.frame, game.player.dir);
-    ctx.drawImage(playerSprite, game.player.x - 8, game.player.y - 12);
+    // Player
+    drawCharacter(ctx, game.player.x, game.player.y, game.player.frame, game.player.dir, '#1a1a1a', '#ffffff', 1.3);
     
     ctx.restore();
-}
-
-function drawPath(x, y, size, seed) {
-    const rng = seededRandom(seed);
-    ctx.fillStyle = '#c4a882';
-    ctx.fillRect(x, y, size, size);
-    
-    ctx.fillStyle = '#b89872';
-    for (let i = 0; i < 6; i++) {
-        ctx.fillRect(x + rng() * size, y + rng() * size, 3, 2);
-    }
-}
-
-function drawStonePath(x, y, size, seed) {
-    const rng = seededRandom(seed);
-    ctx.fillStyle = '#888';
-    ctx.fillRect(x, y, size, size);
-    
-    ctx.fillStyle = '#777';
-    for (let i = 0; i < 4; i++) {
-        ctx.fillRect(x + rng() * size, y + rng() * size, 4, 3);
-    }
-}
-
-function drawWater(x, y, size, seed) {
-    const rng = seededRandom(seed);
-    ctx.fillStyle = '#4a90d9';
-    ctx.fillRect(x, y, size, size);
-    
-    // Water ripple
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-    const offset = Math.sin(game.time * 0.05 + seed) * 2;
-    ctx.fillRect(x + 4 + offset, y + 8, 8, 2);
-    ctx.fillRect(x + 12 - offset, y + 20, 6, 2);
-}
-
-function drawBridge(x, y, size) {
-    ctx.fillStyle = '#8b6914';
-    ctx.fillRect(x, y, size, size);
-    
-    ctx.fillStyle = 'rgba(0,0,0,0.1)';
-    ctx.fillRect(x, y + 4, size, 2);
-    ctx.fillRect(x, y + 12, size, 2);
-    ctx.fillRect(x, y + 20, size, 2);
-    
-    ctx.fillStyle = '#666';
-    ctx.fillRect(x + 2, y, 2, size);
-    ctx.fillRect(x + size - 4, y, 2, size);
-}
-
-function drawFlower(x, y, seed) {
-    const rng = seededRandom(seed);
-    const colors = ['#ff6b8a', '#ffaa44', '#ff44aa', '#ffdd44', '#aa66ff'];
-    const color = colors[Math.floor(rng() * colors.length)];
-    
-    // Stem
-    ctx.fillStyle = '#3a7a32';
-    ctx.fillRect(x - 1, y, 2, 6);
-    
-    // Petals
-    ctx.fillStyle = color;
-    for (let i = 0; i < 5; i++) {
-        const angle = (i / 5) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.arc(x + Math.cos(angle) * 3, y - 2 + Math.sin(angle) * 3, 2, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    
-    ctx.fillStyle = '#ffdd44';
-    ctx.beginPath();
-    ctx.arc(x, y - 2, 2, 0, Math.PI * 2);
-    ctx.fill();
 }
 
 // ============================================================
 // GAME LOOP
 // ============================================================
-let lastTime = 0;
-
-function gameLoop(timestamp) {
+function gameLoop() {
     update();
     render();
     requestAnimationFrame(gameLoop);
@@ -1055,7 +788,7 @@ function gameLoop(timestamp) {
 // START
 // ============================================================
 initGame();
-requestAnimationFrame(gameLoop);
+gameLoop();
 </script>
 </body>
 </html>
