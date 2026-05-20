@@ -6,14 +6,12 @@
     <title>XZero — Maze School Explorer</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #0a0a12; overflow: hidden; font-family: 'Courier New', monospace; }
-        canvas { display: block; }
+        body { background: #1a1a2e; overflow: hidden; font-family: 'Courier New', monospace; }
+        canvas { display: block; image-rendering: pixelated; }
         #hud { position: absolute; top: 0; left: 0; right: 0; pointer-events: none; z-index: 10; }
         #top-bar { display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 16px; }
         #school-info { background: rgba(0,0,0,0.75); border: 1px solid #333; border-radius: 6px; padding: 10px 14px; color: #ccc; font-size: 12px; line-height: 1.6; }
         #school-info .name { color: #00ff88; font-size: 14px; font-weight: bold; }
-        #school-info .seed { color: #888; }
-        #school-info .share { color: #ffaa00; word-break: break-all; }
         #stats-panel { background: rgba(0,0,0,0.75); border: 1px solid #333; border-radius: 6px; padding: 10px 14px; color: #ccc; font-size: 11px; line-height: 1.8; text-align: right; }
         #stats-panel .val { color: #00ff88; }
         #stress-bar-container { position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); width: 300px; text-align: center; }
@@ -23,9 +21,6 @@
         #help-prompt { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); border: 1px solid #ff4444; border-radius: 6px; padding: 8px 16px; color: #ff8888; font-size: 13px; display: none; text-align: center; }
         #event-log { position: absolute; bottom: 16px; left: 16px; right: 16px; max-height: 120px; overflow-y: auto; pointer-events: none; }
         .log-entry { background: rgba(0,0,0,0.6); border-left: 3px solid #00ff88; padding: 4px 10px; margin-bottom: 4px; color: #ccc; font-size: 11px; border-radius: 0 4px 4px 0; animation: fadeIn 0.3s ease-out; }
-        .log-entry.rare { border-left-color: #ffaa00; color: #ffdd88; }
-        .log-entry.transform { border-left-color: #ff4444; color: #ff8888; }
-        .log-entry.stress { border-left-color: #8888ff; color: #aaaaff; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         #controls-hint { position: absolute; bottom: 16px; right: 16px; background: rgba(0,0,0,0.7); border: 1px solid #333; border-radius: 6px; padding: 8px 12px; color: #666; font-size: 11px; line-height: 1.6; }
         #controls-hint kbd { background: #222; border: 1px solid #444; border-radius: 3px; padding: 1px 5px; color: #aaa; font-size: 10px; }
@@ -39,7 +34,6 @@
             <div id="school-info">
                 <div class="name" id="school-name">Sakura Academy</div>
                 <div class="seed" id="school-seed">Seed: 42</div>
-                <div class="share" id="school-share">xzero://seed-42</div>
             </div>
             <div id="stats-panel">
                 <div>Chunks: <span class="val" id="stat-chunks">0</span></div>
@@ -49,7 +43,6 @@
                 <div>FPS: <span class="val" id="stat-fps">0</span></div>
             </div>
         </div>
-        <canvas id="minimap" width="200" height="200"></canvas>
         <div id="stress-bar-container">
             <div id="stress-label">Stress Level</div>
             <div id="stress-bar"><div id="stress-fill"></div></div>
@@ -57,606 +50,837 @@
         <div id="help-prompt"></div>
         <div id="event-log"></div>
         <div id="controls-hint">
-            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move<br>
-            <kbd>E</kbd> Help NPC<br>
-            <kbd>Scroll</kbd> Zoom
+            <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</div>
+            <div><kbd>E</kbd> Interact</div>
+            <div><kbd>Space</kbd> New Chunk</div>
         </div>
     </div>
+
 <script>
-// ═══════════════════════════════════════════════════════════
-// XZero — Self-Contained Maze School Explorer
-// ═══════════════════════════════════════════════════════════
+// ============================================================
+// XZero Maze School Explorer - Rich 2D Pixel Art Game
+// ============================================================
 
-const TILE_SIZE = 32;
-const CHUNK_SIZE = 8;
-const WORLD_SEED = 42;
-const NPC_COUNT = 12;
-const VIEW_CHUNKS = 3;
-
-// ─── Tile Definitions ────────────────────────────────────
-const TILE_TYPES = [
-  { id: "hallway_straight", category: "hallway", stress: "medium", weight: 4 },
-  { id: "hallway_corner", category: "hallway", stress: "medium", weight: 4 },
-  { id: "hallway_branch", category: "hallway", stress: "high", weight: 2 },
-  { id: "hallway_dead_end", category: "hallway", stress: "high", weight: 2 },
-  { id: "hallway_cross", category: "hallway", stress: "high", weight: 1 },
-  { id: "hallway_loop_connector", category: "hallway", stress: "medium", weight: 1 },
-  { id: "classroom", category: "classroom", stress: "medium", weight: 3 },
-  { id: "courtyard", category: "courtyard", stress: "low", weight: 1 },
-  { id: "entrance", category: "entrance", stress: "medium", weight: 1 },
-  { id: "stairwell", category: "stairwell", stress: "medium", weight: 1 },
-  { id: "toilet", category: "toilet", stress: "low", weight: 1 },
-  { id: "roof", category: "outdoor", stress: "low", weight: 1 },
-];
-
-const RARE_TILES = [
-  { id: "rare_locked_music_room", name: "Locked Music Room", rarity: 0.008, color: "#aa8833", msg: "You found a hidden music room — a dusty piano sits in the corner" },
-  { id: "rare_hidden_courtyard", name: "Hidden Courtyard", rarity: 0.012, color: "#33aa55", msg: "Behind the bushes lies a forgotten courtyard — the air feels lighter" },
-  { id: "rare_teacher_free_zone", name: "Teacher-Free Zone", rarity: 0.015, color: "#5588aa", msg: "A corridor where teachers never patrol — students breathe easier here" },
-  { id: "rare_secret_passage", name: "Secret Passage", rarity: 0.005, color: "#8833aa", msg: "A hidden passage behind a loose bookshelf — it leads somewhere unexpected" },
-  { id: "rare_rooftop_garden", name: "Rooftop Garden", rarity: 0.010, color: "#33aa88", msg: "Someone has been growing flowers on the roof — a quiet sanctuary" },
-  { id: "rare_abandoned_clubroom", name: "Abandoned Clubroom", rarity: 0.012, color: "#aa5533", msg: "An old clubroom frozen in time — posters from years past still hang" },
-];
-
-const TILE_COLORS = {};
-TILE_TYPES.forEach(t => {
-  TILE_COLORS[t.id] = {
-    hallway_straight: "#4a4a52", hallway_corner: "#424248", hallway_branch: "#5a3a3a",
-    hallway_dead_end: "#3a3040", hallway_cross: "#505058", hallway_loop_connector: "#3a5040",
-    classroom: "#6a6040", courtyard: "#3a6040", entrance: "#605040",
-    stairwell: "#4a4050", toilet: "#505a60", roof: "#404a5a",
-  }[t.id] || "#3a3a42";
-});
-RARE_TILES.forEach(t => TILE_COLORS[t.id] = t.color);
-
-const MOOD_COLORS = { burnout: "#ff3333", anxious: "#ffaa00", drowsy: "#6666cc", social: "#33cc55", avoidant: "#aa44aa", focused: "#4488ff", relaxed: "#44dd88" };
-const MOOD_GLOW = { burnout: 0.8, anxious: 0.6, drowsy: 0.3, social: 0.4, avoidant: 0.5, focused: 0.2, relaxed: 0.25 };
-const NPC_NAMES = ["Yuki","Haruto","Sakura","Ren","Hina","Sota","Aoi","Riku","Mio","Kaito","Yui","Taro"];
-const MOODS = ["burnout","anxious","drowsy","social","avoidant","focused","relaxed"];
-const LOCATIONS = ["classroom","stairwell","courtyard","hallway","toilet","roof","corridor"];
-
-// ─── Seeded RNG ──────────────────────────────────────────
-function mulberry32(a) {
-  return function() {
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    var t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  }
-}
-
-function hashCoords(x, z, seed) {
-  let h = seed | 0;
-  h = Math.imul(h ^ x, 0x5bd1e995);
-  h = Math.imul(h ^ z, 0x5bd1e995);
-  h = h ^ (h >>> 13);
-  return Math.abs(h);
-}
-
-// ─── WFC (Simplified) ────────────────────────────────────
-function generateChunkTiles(chunkX, chunkZ, seed) {
-  const chunkSeed = hashCoords(chunkX, chunkZ, seed);
-  const rng = mulberry32(chunkSeed);
-  const tiles = {};
-
-  // Build weighted tile list
-  const weighted = [];
-  TILE_TYPES.forEach(t => { for (let i = 0; i < t.weight; i++) weighted.push(t.id); });
-
-  // Generate maze-like layout using cellular automata + WFC-inspired placement
-  const grid = [];
-  for (let z = 0; z < CHUNK_SIZE; z++) {
-    grid[z] = [];
-    for (let x = 0; x < CHUNK_SIZE; x++) {
-      grid[z][x] = { possible: [...weighted], collapsed: false, tile: null };
-    }
-  }
-
-  // Seed entrance
-  const entX = Math.floor(CHUNK_SIZE / 2);
-  const entZ = CHUNK_SIZE - 1;
-  collapseCell(grid, entZ, entX, ["entrance"], rng);
-
-  // Seed courtyard
-  const courtX = Math.floor(rng() * CHUNK_SIZE);
-  const courtZ = Math.floor(rng() * CHUNK_SIZE);
-  collapseCell(grid, courtZ, courtX, ["courtyard"], rng);
-
-  // Collapse remaining cells with adjacency constraints
-  let changed = true;
-  let iterations = 0;
-  while (changed && iterations < 200) {
-    changed = false;
-    iterations++;
-
-    // Find cell with lowest entropy
-    let minEntropy = Infinity;
-    let targetX = -1, targetZ = -1;
-    for (let z = 0; z < CHUNK_SIZE; z++) {
-      for (let x = 0; x < CHUNK_SIZE; x++) {
-        if (!grid[z][x].collapsed && grid[z][x].possible.length > 0) {
-          const entropy = grid[z][x].possible.length;
-          if (entropy < minEntropy) {
-            minEntropy = entropy;
-            targetX = x; targetZ = z;
-          }
-        }
-      }
-    }
-
-    if (targetX >= 0) {
-      const cell = grid[targetZ][targetX];
-      const tileId = cell.possible[Math.floor(rng() * cell.possible.length)];
-      collapseCell(grid, targetZ, targetX, [tileId], rng);
-      changed = true;
-    }
-  }
-
-  // Fill any remaining uncollapsed cells
-  for (let z = 0; z < CHUNK_SIZE; z++) {
-    for (let x = 0; x < CHUNK_SIZE; x++) {
-      if (!grid[z][x].collapsed) {
-        grid[z][x].tile = weighted[Math.floor(rng() * weighted.length)];
-        grid[z][x].collapsed = true;
-      }
-    }
-  }
-
-  // Convert to world coordinates
-  const result = {};
-  for (let z = 0; z < CHUNK_SIZE; z++) {
-    for (let x = 0; x < CHUNK_SIZE; x++) {
-      const wx = chunkX * CHUNK_SIZE + x;
-      const wz = chunkZ * CHUNK_SIZE + z;
-      result[`${wx},${wz}`] = { typeId: grid[z][x].tile, rotation: 0, flipX: false };
-    }
-  }
-
-  // Check for rare tiles
-  for (const def of RARE_TILES) {
-    const rarity = rng();
-    if (rarity < def.rarity) {
-      const rx = chunkX * CHUNK_SIZE + Math.floor(rng() * CHUNK_SIZE);
-      const rz = chunkZ * CHUNK_SIZE + Math.floor(rng() * CHUNK_SIZE);
-      result[`${rx},${rz}`] = { typeId: def.id, rotation: 0, flipX: false };
-    }
-  }
-
-  return result;
-}
-
-function collapseCell(grid, z, x, forcedTiles, rng) {
-  const cell = grid[z][x];
-  cell.possible = forcedTiles.filter(t => cell.possible.includes(t));
-  if (cell.possible.length === 0) cell.possible = [...forcedTiles];
-  cell.tile = cell.possible[0];
-  cell.collapsed = true;
-
-  // Propagate to neighbors (simplified)
-  const neighbors = [[0,1],[0,-1],[1,0],[-1,0]];
-  for (const [dz, dx] of neighbors) {
-    const nz = z + dz, nx = x + dx;
-    if (nz >= 0 && nz < CHUNK_SIZE && nx >= 0 && nx < CHUNK_SIZE && !grid[nz][nx].collapsed) {
-      const n = grid[nz][nx];
-      // Remove incompatible tiles (simplified: just reduce options)
-      const currentType = cell.tile;
-      if (currentType.includes("courtyard")) {
-        n.possible = n.possible.filter(t => t.includes("hallway") || t.includes("entrance") || t.includes("courtyard"));
-      } else if (currentType.includes("entrance")) {
-        n.possible = n.possible.filter(t => t.includes("hallway") || t.includes("entrance"));
-      }
-      if (n.possible.length === 0) n.possible = ["hallway_straight"];
-    }
-  }
-}
-
-// ─── Canvas Setup ────────────────────────────────────────
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-const minimapCanvas = document.getElementById("minimap");
-const minimapCtx = minimapCanvas.getContext("2d");
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
 
 function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 }
 resize();
-window.addEventListener("resize", resize);
+window.addEventListener('resize', resize);
 
-// ─── Game State ──────────────────────────────────────────
-const state = {
-  playerX: CHUNK_SIZE * TILE_SIZE / 2,
-  playerZ: CHUNK_SIZE * TILE_SIZE / 2,
-  cameraX: 0, cameraZ: 0, zoom: 1,
-  chunks: {}, npcs: [], npcStates: {}, npcPositions: {},
-  interactableNPC: null,
-  playerStress: 0,
-  chunksExplored: 0, npcsHelped: 0, rareDiscoveries: 0,
-  transformingChunks: {},
-  keys: new Set(),
-  fps: 0, frameCount: 0, lastFpsTime: 0,
-  time: 0, gameHour: 8,
-  discoveredRare: new Set(),
+// ============================================================
+// COLOR PALETTE
+// ============================================================
+const COLORS = {
+    grass: ['#4a7c59', '#3d6b4e', '#5a8f6a', '#4d7a5c'],
+    grassDark: '#2d4a35',
+    path: '#c4a882',
+    pathDark: '#a89070',
+    water: '#4a90d9',
+    waterLight: '#6ab0ff',
+    tree: ['#2d5a27', '#3a7a32', '#4a8a42', '#1d4a17'],
+    treeTrunk: '#6b4423',
+    building: ['#e8d5b7', '#d4c0a0', '#c8b090', '#f0e0c8'],
+    roof: ['#8b4513', '#a0522d', '#cd853f', '#6b3410'],
+    window: ['#87ceeb', '#b0e0ff', '#4a90d9'],
+    door: ['#5c3a1e', '#4a2e18'],
+    flower: ['#ff6b8a', '#ffaa44', '#ff44aa', '#ffdd44', '#aa66ff'],
+    player: { hair: '#2a1a0a', skin: '#f5d0a0', shirt: '#4488ff', pants: '#333355', shoes: '#222222' },
+    npc: ['#ff6b6b', '#44bb88', '#ffaa44', '#aa66ff', '#66aaff', '#ff88aa'],
+    sky: { day: '#87ceeb', sunset: '#ff8855', night: '#1a1a3e' },
+    shadow: 'rgba(0,0,0,0.3)',
+    highlight: '#00ff88',
+    text: '#ffffff',
+    textShadow: '#000000'
 };
 
-// ─── Input ───────────────────────────────────────────────
-window.addEventListener("keydown", e => {
-  state.keys.add(e.code);
-  if (e.code === "KeyE") handleInteract();
-  if (e.code === "Tab") { e.preventDefault(); addLog("Share code: xzero://seed-" + WORLD_SEED + "-helped-" + state.npcsHelped, "rare"); }
-});
-window.addEventListener("keyup", e => state.keys.delete(e.code));
-canvas.addEventListener("wheel", e => {
-  e.preventDefault();
-  state.zoom = Math.max(0.3, Math.min(3, state.zoom - e.deltaY * 0.001));
-});
+// ============================================================
+// SPRITE DRAWING FUNCTIONS (Pixel Art)
+// ============================================================
 
-// ─── World Management ────────────────────────────────────
-function chunkId(x, z) { return x + "_" + z; }
-
-function ensureChunk(cx, cz) {
-  const id = chunkId(cx, cz);
-  if (!state.chunks[id]) {
-    state.chunks[id] = generateChunkTiles(cx, cz, WORLD_SEED);
-    state.chunksExplored++;
-  }
+function drawPixelRect(x, y, w, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.floor(x), Math.floor(y), w, h);
 }
 
-function loadNearby() {
-  const pcx = Math.floor(state.playerX / (CHUNK_SIZE * TILE_SIZE));
-  const pcz = Math.floor(state.playerZ / (CHUNK_SIZE * TILE_SIZE));
-  for (let dx = -VIEW_CHUNKS; dx <= VIEW_CHUNKS; dx++)
-    for (let dz = -VIEW_CHUNKS; dz <= VIEW_CHUNKS; dz++)
-      ensureChunk(pcx + dx, pcz + dz);
-}
-
-// ─── NPC Spawning ────────────────────────────────────────
-function spawnNPCs() {
-  for (let i = 0; i < NPC_COUNT; i++) {
-    const mood = MOODS[i % MOODS.length];
-    const location = LOCATIONS[i % LOCATIONS.length];
-    const stress = mood === "burnout" ? 0.9 : mood === "anxious" ? 0.7 : mood === "relaxed" ? 0.2 : 0.5;
-    const energy = mood === "drowsy" ? 0.2 : mood === "burnout" ? 0.15 : 0.7;
-
-    const chunkX = ((WORLD_SEED * (i + 1) * 7) % 5) - 2;
-    const chunkZ = ((WORLD_SEED * (i + 1) * 13) % 5) - 2;
-    const tileX = (chunkX * CHUNK_SIZE + (i * 3 % CHUNK_SIZE)) * TILE_SIZE + TILE_SIZE / 2;
-    const tileZ = (chunkZ * CHUNK_SIZE + (i * 5 % CHUNK_SIZE)) * TILE_SIZE + TILE_SIZE / 2;
-
-    state.npcs.push({ id: "npc_" + i, name: NPC_NAMES[i % NPC_NAMES.length], currentLocation: location });
-    state.npcStates["npc_" + i] = {
-      mood, stressLevel: stress, energyLevel: energy,
-      focusLevel: mood === "focused" ? 0.9 : 0.5,
-      socialDesire: mood === "social" ? 0.8 : 0.3,
-      escapeUrge: mood === "avoidant" ? 0.7 : 0.2,
-      motivation: mood === "burnout" ? 0.1 : 0.5,
-    };
-    state.npcPositions["npc_" + i] = { x: tileX, z: tileZ };
-  }
-}
-
-// ─── Interaction ─────────────────────────────────────────
-function handleInteract() {
-  if (!state.interactableNPC) return;
-  const npc = state.npcs.find(n => n.id === state.interactableNPC);
-  const ns = state.npcStates[state.interactableNPC];
-  if (!npc || !ns) return;
-
-  const prev = ns.mood;
-  const next = prev === "burnout" ? "relaxed" : prev === "anxious" ? "focused" : prev === "avoidant" ? "social" : null;
-  if (!next) return;
-
-  ns.mood = next;
-  ns.stressLevel = Math.max(0, ns.stressLevel - 0.4);
-  ns.energyLevel = Math.min(1, ns.energyLevel + 0.3);
-  state.npcsHelped++;
-
-  addLog(npc.name + ": " + prev + " → " + next, "transform");
-
-  // Chunk transformation
-  const pos = state.npcPositions[npc.id];
-  const cx = Math.floor(pos.x / (CHUNK_SIZE * TILE_SIZE));
-  const cz = Math.floor(pos.z / (CHUNK_SIZE * TILE_SIZE));
-  const cid = chunkId(cx, cz);
-
-  state.transformingChunks[cid] = { progress: 0, reason: "Helped " + npc.name };
-
-  setTimeout(() => {
-    delete state.chunks[cid];
-    ensureChunk(cx, cz);
-    addLog("Chunk transformed: " + cid, "transform");
-    setTimeout(() => delete state.transformingChunks[cid], 500);
-  }, 800);
-
-  state.interactableNPC = null;
-  updateHelpPrompt();
-}
-
-function updateInteractable() {
-  const ptx = state.playerX / TILE_SIZE;
-  const ptz = state.playerZ / TILE_SIZE;
-  let closest = null, closestDist = 3.0;
-
-  for (const npc of state.npcs) {
-    const pos = state.npcPositions[npc.id];
-    const ns = state.npcStates[npc.id];
-    if (!ns) continue;
-    const dx = pos.x / TILE_SIZE - ptx;
-    const dz = pos.z / TILE_SIZE - ptz;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < closestDist && (ns.mood === "burnout" || ns.mood === "anxious" || ns.mood === "avoidant")) {
-      closestDist = dist;
-      closest = npc.id;
-    }
-  }
-
-  state.interactableNPC = closest;
-  updateHelpPrompt();
-}
-
-function updateHelpPrompt() {
-  const el = document.getElementById("help-prompt");
-  if (!state.interactableNPC) { el.style.display = "none"; return; }
-  const npc = state.npcs.find(n => n.id === state.interactableNPC);
-  const ns = state.npcStates[state.interactableNPC];
-  const msgs = { burnout: "[E] Help " + npc.name + " — they're in burnout", anxious: "[E] Calm " + npc.name + " — they're anxious", avoidant: "[E] Approach " + npc.name + " — they're hiding" };
-  const msg = msgs[ns.mood];
-  if (msg) { el.style.display = "block"; el.textContent = msg; } else { el.style.display = "none"; }
-}
-
-// ─── Event Log ───────────────────────────────────────────
-function addLog(text, type) {
-  const el = document.getElementById("event-log");
-  const entry = document.createElement("div");
-  entry.className = "log-entry" + (type ? " " + type : "");
-  entry.textContent = text;
-  el.appendChild(entry);
-  el.scrollTop = el.scrollHeight;
-  while (el.children.length > 20) el.removeChild(el.firstChild);
-}
-
-// ─── Rendering ───────────────────────────────────────────
-function w2s(wx, wz) { return [(wx - state.cameraX) * state.zoom + canvas.width / 2, (wz - state.cameraZ) * state.zoom + canvas.height / 2]; }
-
-function drawTile(wx, wz, typeId) {
-  const color = TILE_COLORS[typeId] || "#3a3a42";
-  const [sx, sy] = w2s(wx * TILE_SIZE, wz * TILE_SIZE);
-  const size = TILE_SIZE * state.zoom;
-  if (sx < -size || sy < -size || sx > canvas.width + size || sy > canvas.height + size) return;
-
-  ctx.fillStyle = color;
-  ctx.fillRect(sx - size / 2, sy - size / 2, size, size);
-  ctx.strokeStyle = "rgba(255,255,255,0.04)";
-  ctx.lineWidth = 0.5;
-  ctx.strokeRect(sx - size / 2, sy - size / 2, size, size);
-
-  if (typeId.startsWith("rare_")) {
-    const isRare = !state.discoveredRare.has(wx + "," + wz);
-    ctx.fillStyle = isRare ? "rgba(255,200,50,0.4)" : "rgba(255,200,50,0.15)";
+function drawCircle(x, y, r, color) {
+    ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(sx, sy, size * 0.35, 0, Math.PI * 2);
+    ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
-    if (isRare) {
-      ctx.fillStyle = "#ffcc33";
-      ctx.font = Math.max(8, 12 * state.zoom) + "px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("★", sx, sy + 4 * state.zoom);
-      // Discover it
-      state.discoveredRare.add(wx + "," + wz);
-      state.rareDiscoveries++;
-      const def = RARE_TILES.find(t => t.id === typeId);
-      if (def) addLog(def.msg, "rare");
+}
+
+// Character sprite with animation
+function drawCharacter(x, y, frame, direction, colors, scale = 1) {
+    const s = scale;
+    const bobY = Math.sin(frame * 0.3) * 2 * s;
+    const legSwing = Math.sin(frame * 0.4) * 4 * s;
+    
+    ctx.save();
+    ctx.translate(x, y + bobY);
+    
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(0, 20 * s, 10 * s, 4 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Legs
+    ctx.fillStyle = colors.pants || COLORS.player.pants;
+    ctx.fillRect(-5 * s + legSwing, 8 * s, 4 * s, 12 * s);
+    ctx.fillRect(1 * s - legSwing, 8 * s, 4 * s, 12 * s);
+    
+    // Shoes
+    ctx.fillStyle = colors.shoes || COLORS.player.shoes;
+    ctx.fillRect(-5 * s + legSwing, 18 * s, 5 * s, 3 * s);
+    ctx.fillRect(1 * s - legSwing, 18 * s, 5 * s, 3 * s);
+    
+    // Body/Shirt
+    ctx.fillStyle = colors.shirt || COLORS.player.shirt;
+    ctx.fillRect(-6 * s, -4 * s, 12 * s, 14 * s);
+    
+    // Shirt detail
+    ctx.fillStyle = 'rgba(0,0,0,0.1)';
+    ctx.fillRect(-6 * s, 4 * s, 12 * s, 2 * s);
+    
+    // Arms
+    const armSwing = Math.sin(frame * 0.4) * 3 * s;
+    ctx.fillStyle = colors.shirt || COLORS.player.shirt;
+    ctx.fillRect(-9 * s, -2 * s + armSwing, 4 * s, 10 * s);
+    ctx.fillRect(5 * s, -2 * s - armSwing, 4 * s, 10 * s);
+    
+    // Hands
+    ctx.fillStyle = colors.skin || COLORS.player.skin;
+    ctx.fillRect(-9 * s, 7 * s + armSwing, 4 * s, 3 * s);
+    ctx.fillRect(5 * s, 7 * s - armSwing, 4 * s, 3 * s);
+    
+    // Head
+    ctx.fillStyle = colors.skin || COLORS.player.skin;
+    ctx.fillRect(-5 * s, -16 * s, 10 * s, 12 * s);
+    
+    // Hair
+    ctx.fillStyle = colors.hair || COLORS.player.hair;
+    ctx.fillRect(-6 * s, -18 * s, 12 * s, 6 * s);
+    ctx.fillRect(-6 * s, -16 * s, 2 * s, 8 * s);
+    ctx.fillRect(4 * s, -16 * s, 2 * s, 8 * s);
+    
+    // Eyes
+    ctx.fillStyle = '#222';
+    if (direction === 'right' || direction === 'up') {
+        ctx.fillRect(-2 * s, -12 * s, 2 * s, 2 * s);
+        ctx.fillRect(2 * s, -12 * s, 2 * s, 2 * s);
+    } else if (direction === 'left') {
+        ctx.fillRect(-3 * s, -12 * s, 2 * s, 2 * s);
+        ctx.fillRect(1 * s, -12 * s, 2 * s, 2 * s);
     }
-  }
+    
+    // Mouth
+    ctx.fillStyle = '#d4846a';
+    ctx.fillRect(-1 * s, -8 * s, 2 * s, 1 * s);
+    
+    ctx.restore();
 }
 
-function drawPlayer() {
-  const [sx, sy] = w2s(state.playerX, state.playerZ);
-  const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, 20 * state.zoom);
-  g.addColorStop(0, "rgba(0,255,136,0.4)");
-  g.addColorStop(1, "rgba(0,255,136,0)");
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(sx, sy, 20 * state.zoom, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#00ff88";
-  ctx.beginPath(); ctx.arc(sx, sy, 5 * state.zoom, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(sx, sy, 5 * state.zoom, 0, Math.PI * 2); ctx.stroke();
-}
-
-function drawNPC(npc, ns, pos) {
-  const [sx, sy] = w2s(pos.x, pos.z);
-  const size = TILE_SIZE * state.zoom;
-  if (sx < -size * 2 || sy < -size * 2 || sx > canvas.width + size * 2 || sy > canvas.height + size * 2) return;
-
-  const mc = MOOD_COLORS[ns.mood];
-  const gi = MOOD_GLOW[ns.mood];
-
-  // Aura
-  const aura = (12 + gi * 15) * state.zoom;
-  const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, aura);
-  g.addColorStop(0, mc + "88"); g.addColorStop(0.5, mc + "33"); g.addColorStop(1, mc + "00");
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(sx, sy, aura, 0, Math.PI * 2); ctx.fill();
-
-  // Pulse for distressed
-  if (ns.mood === "burnout" || ns.mood === "anxious") {
-    const pulse = Math.sin(state.time * 5) * 0.3 + 0.7;
-    ctx.strokeStyle = mc; ctx.lineWidth = 2 * state.zoom * pulse;
-    ctx.beginPath(); ctx.arc(sx, sy, (8 + gi * 8) * state.zoom, 0, Math.PI * 2); ctx.stroke();
-  }
-
-  // Dot
-  ctx.fillStyle = mc;
-  ctx.beginPath(); ctx.arc(sx, sy, 4 * state.zoom, 0, Math.PI * 2); ctx.fill();
-
-  // Name
-  ctx.fillStyle = "#fff";
-  ctx.font = Math.max(8, 10 * state.zoom) + "px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText(npc.name, sx, sy - 10 * state.zoom);
-  ctx.fillStyle = mc;
-  ctx.font = Math.max(7, 8 * state.zoom) + "px monospace";
-  ctx.fillText(ns.mood, sx, sy + 16 * state.zoom);
-
-  // Interactable ring
-  if (npc.id === state.interactableNPC) {
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.arc(sx, sy, 18 * state.zoom, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
-  }
-}
-
-function drawMinimap() {
-  const mc = minimapCtx, mw = 200, mh = 200;
-  mc.fillStyle = "#0a0a12"; mc.fillRect(0, 0, mw, mh);
-  const scale = 3, cx = mw / 2, cz = mh / 2;
-
-  for (const cid in state.chunks) {
-    const tiles = state.chunks[cid];
-    for (const key in tiles) {
-      const [tx, tz] = key.split(",").map(Number);
-      const dx = (tx * TILE_SIZE - state.playerX) * scale / TILE_SIZE + cx;
-      const dz = (tz * TILE_SIZE - state.playerZ) * scale / TILE_SIZE + cz;
-      if (dx < 0 || dz < 0 || dx > mw || dz > mh) continue;
-      mc.fillStyle = TILE_COLORS[tiles[key].typeId] || "#3a3a42";
-      mc.fillRect(dx - 1, dz - 1, 2, 2);
+// Building sprite
+function drawBuilding(x, y, w, h, seed) {
+    const rng = seededRandom(seed);
+    const wallColor = COLORS.building[Math.floor(rng() * COLORS.building.length)];
+    const roofColor = COLORS.roof[Math.floor(rng() * COLORS.roof.length)];
+    
+    // Shadow
+    ctx.fillStyle = COLORS.shadow;
+    ctx.fillRect(x + 4, y + 4, w, h);
+    
+    // Main wall
+    ctx.fillStyle = wallColor;
+    ctx.fillRect(x, y, w, h);
+    
+    // Wall texture (bricks)
+    ctx.fillStyle = 'rgba(0,0,0,0.05)';
+    for (let row = 0; row < h; row += 8) {
+        for (let col = (row % 16 === 0 ? 0 : 8); col < w; col += 16) {
+            ctx.fillRect(x + col, y + row, 14, 6);
+        }
     }
-  }
-
-  for (const npc of state.npcs) {
-    const pos = state.npcPositions[npc.id];
-    const ns = state.npcStates[npc.id];
-    if (!ns) continue;
-    const dx = (pos.x - state.playerX) * scale / TILE_SIZE + cx;
-    const dz = (pos.z - state.playerZ) * scale / TILE_SIZE + cz;
-    if (dx < 0 || dz < 0 || dx > mw || dz > mh) continue;
-    mc.fillStyle = MOOD_COLORS[ns.mood];
-    mc.beginPath(); mc.arc(dx, dz, 3, 0, Math.PI * 2); mc.fill();
-  }
-
-  mc.fillStyle = "#00ff88";
-  mc.beginPath(); mc.arc(cx, cz, 4, 0, Math.PI * 2); mc.fill();
-  mc.strokeStyle = "#fff"; mc.lineWidth = 1;
-  mc.beginPath(); mc.arc(cx, cz, 4, 0, Math.PI * 2); mc.stroke();
-  mc.strokeStyle = "#333"; mc.lineWidth = 1; mc.strokeRect(0, 0, mw, mh);
+    
+    // Roof
+    ctx.fillStyle = roofColor;
+    ctx.beginPath();
+    ctx.moveTo(x - 4, y);
+    ctx.lineTo(x + w / 2, y - 20);
+    ctx.lineTo(x + w + 4, y);
+    ctx.fill();
+    
+    // Roof detail
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.beginPath();
+    ctx.moveTo(x + w / 2, y - 20);
+    ctx.lineTo(x + w + 4, y);
+    ctx.lineTo(x + w / 2, y);
+    ctx.fill();
+    
+    // Windows
+    const windowRows = Math.floor((h - 20) / 20);
+    const windowCols = Math.floor((w - 20) / 20);
+    for (let r = 0; r < windowRows; r++) {
+        for (let c = 0; c < windowCols; c++) {
+            const wx = x + 12 + c * 20;
+            const wy = y + 12 + r * 20;
+            const winColor = COLORS.window[Math.floor(rng() * COLORS.window.length)];
+            
+            // Window frame
+            ctx.fillStyle = '#5c3a1e';
+            ctx.fillRect(wx - 2, wy - 2, 12, 12);
+            
+            // Window glass
+            ctx.fillStyle = winColor;
+            ctx.fillRect(wx, wy, 10, 10);
+            
+            // Window reflection
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.fillRect(wx + 1, wy + 1, 3, 3);
+            
+            // Window cross
+            ctx.fillStyle = '#5c3a1e';
+            ctx.fillRect(wx + 4, wy, 2, 10);
+            ctx.fillRect(wx, wy + 4, 10, 2);
+        }
+    }
+    
+    // Door
+    const doorX = x + w / 2 - 6;
+    const doorY = y + h - 18;
+    ctx.fillStyle = COLORS.door;
+    ctx.fillRect(doorX, doorY, 12, 18);
+    
+    // Door frame
+    ctx.fillStyle = '#3a2210';
+    ctx.fillRect(doorX - 1, doorY - 1, 14, 2);
+    ctx.fillRect(doorX - 1, doorY, 2, 18);
+    ctx.fillRect(doorX + 11, doorY, 2, 18);
+    
+    // Door knob
+    ctx.fillStyle = '#ffcc44';
+    ctx.fillRect(doorX + 8, doorY + 8, 2, 2);
 }
 
-function updateUI() {
-  const pct = (state.playerStress / 100) * 100;
-  const fill = document.getElementById("stress-fill");
-  fill.style.width = pct + "%";
-  fill.style.background = pct > 80 ? "linear-gradient(90deg,#ff4444,#ff0000)" : pct > 50 ? "linear-gradient(90deg,#ffaa00,#ff6600)" : pct > 20 ? "linear-gradient(90deg,#44aaff,#4488ff)" : "linear-gradient(90deg,#44dd88,#33aa66)";
-
-  document.getElementById("stat-chunks").textContent = state.chunksExplored;
-  document.getElementById("stat-helped").textContent = state.npcsHelped;
-  document.getElementById("stat-rare").textContent = state.rareDiscoveries;
-  document.getElementById("stat-npcs").textContent = state.npcs.length;
-  document.getElementById("stat-fps").textContent = state.fps;
+// Tree sprite
+function drawTree(x, y, size = 1, seed = 0) {
+    const rng = seededRandom(seed + x * 100 + y);
+    
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(x + 4, y + 4, 16 * size, 6 * size, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Trunk
+    ctx.fillStyle = COLORS.treeTrunk;
+    ctx.fillRect(x - 3 * size, y - 10 * size, 6 * size, 20 * size);
+    
+    // Trunk texture
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(x - 1 * size, y - 8 * size, 2 * size, 16 * size);
+    
+    // Foliage layers
+    const foliageColors = [COLORS.tree[0], COLORS.tree[1], COLORS.tree[2]];
+    for (let i = 2; i >= 0; i--) {
+        ctx.fillStyle = foliageColors[i];
+        ctx.beginPath();
+        const layerY = y - 15 * size - i * 12 * size;
+        const layerSize = (18 - i * 4) * size;
+        ctx.moveTo(x, layerY - layerSize);
+        ctx.lineTo(x - layerSize, layerY + 8 * size);
+        ctx.lineTo(x + layerSize, layerY + 8 * size);
+        ctx.fill();
+    }
+    
+    // Foliage highlights
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.beginPath();
+    ctx.arc(x - 4 * size, y - 25 * size, 6 * size, 0, Math.PI * 2);
+    ctx.fill();
 }
 
-// ─── Game Loop ───────────────────────────────────────────
-function update(dt) {
-  state.time += dt;
-  state.gameHour += dt * 0.5;
-
-  const speed = 120 * dt * state.zoom;
-  if (state.keys.has("KeyW") || state.keys.has("ArrowUp")) state.playerZ -= speed;
-  if (state.keys.has("KeyS") || state.keys.has("ArrowDown")) state.playerZ += speed;
-  if (state.keys.has("KeyA") || state.keys.has("ArrowLeft")) state.playerX -= speed;
-  if (state.keys.has("KeyD") || state.keys.has("ArrowRight")) state.playerX += speed;
-
-  state.cameraX += (state.playerX - state.cameraX) * 0.1;
-  state.cameraZ += (state.playerZ - state.cameraZ) * 0.1;
-
-  loadNearby();
-  updateInteractable();
-
-  // Transform animations
-  for (const cid in state.transformingChunks) {
-    state.transformingChunks[cid].progress += dt * 2;
-    if (state.transformingChunks[cid].progress > 1) delete state.transformingChunks[cid];
-  }
-
-  // Stress
-  const ptx = Math.floor(state.playerX / TILE_SIZE);
-  const ptz = Math.floor(state.playerZ / TILE_SIZE);
-  let inHighStress = false;
-  for (const cid in state.chunks) {
-    const tile = state.chunks[cid][ptx + "," + ptz];
-    if (tile && (tile.typeId.includes("exam") || tile.typeId.includes("staff"))) inHighStress = true;
-  }
-  state.playerStress = inHighStress ? Math.min(100, state.playerStress + dt * 5) : Math.max(0, state.playerStress - dt * 3);
-
-  state.frameCount++;
-  const now = performance.now();
-  if (now - state.lastFpsTime > 1000) { state.fps = state.frameCount; state.frameCount = 0; state.lastFpsTime = now; }
+// Bush sprite
+function drawBush(x, y, size = 1) {
+    ctx.fillStyle = COLORS.tree[1];
+    ctx.beginPath();
+    ctx.arc(x, y, 10 * size, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.fillStyle = COLORS.tree[2];
+    ctx.beginPath();
+    ctx.arc(x - 6 * size, y + 2 * size, 8 * size, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.beginPath();
+    ctx.arc(x + 7 * size, y + 1 * size, 7 * size, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.beginPath();
+    ctx.arc(x - 2 * size, y - 4 * size, 4 * size, 0, Math.PI * 2);
+    ctx.fill();
 }
 
+// Flower sprite
+function drawFlower(x, y, size = 1, seed = 0) {
+    const rng = seededRandom(seed);
+    const color = COLORS.flower[Math.floor(rng() * COLORS.flower.length)];
+    
+    // Stem
+    ctx.fillStyle = '#3a7a32';
+    ctx.fillRect(x - 1 * size, y, 2 * size, 8 * size);
+    
+    // Petals
+    ctx.fillStyle = color;
+    for (let i = 0; i < 5; i++) {
+        const angle = (i / 5) * Math.PI * 2;
+        const px = x + Math.cos(angle) * 3 * size;
+        const py = y - 2 * size + Math.sin(angle) * 3 * size;
+        ctx.beginPath();
+        ctx.arc(px, py, 2 * size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // Center
+    ctx.fillStyle = '#ffdd44';
+    ctx.beginPath();
+    ctx.arc(x, y - 2 * size, 2 * size, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// ============================================================
+// SEEDED RANDOM
+// ============================================================
+function seededRandom(seed) {
+    let s = seed;
+    return function() {
+        s = (s * 9301 + 49297) % 233280;
+        return s / 233280;
+    };
+}
+
+// ============================================================
+// TILE TYPES
+// ============================================================
+const TILE_SIZE = 48;
+const TILE = {
+    GRASS: 0,
+    PATH: 1,
+    BUILDING: 2,
+    TREE: 3,
+    WATER: 4,
+    FLOWER: 5,
+    BUSH: 6,
+    WALL: 7,
+    DOOR: 8,
+    FENCE: 9,
+    LAMP: 10,
+    BENCH: 11
+};
+
+// ============================================================
+// MAP GENERATOR
+// ============================================================
+function generateMap(width, height, seed) {
+    const rng = seededRandom(seed);
+    const map = [];
+    
+    for (let y = 0; y < height; y++) {
+        map[y] = [];
+        for (let x = 0; x < width; x++) {
+            map[y][x] = TILE.GRASS;
+        }
+    }
+    
+    // Generate paths (cross pattern)
+    const midX = Math.floor(width / 2);
+    const midY = Math.floor(height / 2);
+    for (let x = 0; x < width; x++) {
+        map[midY][x] = TILE.PATH;
+        map[midY + 1][x] = TILE.PATH;
+    }
+    for (let y = 0; y < height; y++) {
+        map[y][midX] = TILE.PATH;
+        map[y][midX + 1] = TILE.PATH;
+    }
+    
+    // Buildings
+    const buildings = [
+        { x: 2, y: 2, w: 4, h: 3 },
+        { x: midX + 4, y: 2, w: 3, h: 4 },
+        { x: 2, y: midY + 4, w: 5, h: 3 },
+        { x: midX + 3, y: midY + 3, w: 4, h: 4 },
+        { x: Math.floor(width * 0.7), y: Math.floor(height * 0.2), w: 3, h: 3 },
+        { x: Math.floor(width * 0.15), y: Math.floor(height * 0.6), w: 3, h: 2 }
+    ];
+    
+    for (const b of buildings) {
+        for (let by = b.y; by < b.y + b.h && by < height; by++) {
+            for (let bx = b.x; bx < b.x + b.w && bx < width; bx++) {
+                map[by][bx] = TILE.BUILDING;
+            }
+        }
+    }
+    
+    // Trees
+    for (let i = 0; i < 30; i++) {
+        const tx = Math.floor(rng() * width);
+        const ty = Math.floor(rng() * height);
+        if (map[ty][tx] === TILE.GRASS) {
+            map[ty][tx] = TILE.TREE;
+        }
+    }
+    
+    // Flowers
+    for (let i = 0; i < 20; i++) {
+        const fx = Math.floor(rng() * width);
+        const fy = Math.floor(rng() * height);
+        if (map[fy][fx] === TILE.GRASS) {
+            map[fy][fx] = TILE.FLOWER;
+        }
+    }
+    
+    // Bushes
+    for (let i = 0; i < 15; i++) {
+        const bx = Math.floor(rng() * width);
+        const by = Math.floor(rng() * height);
+        if (map[by][bx] === TILE.GRASS) {
+            map[by][bx] = TILE.BUSH;
+        }
+    }
+    
+    // Lamp posts along paths
+    for (let x = 0; x < width; x += 4) {
+        if (map[midY - 1] && map[midY - 1][x] === TILE.GRASS) map[midY - 1][x] = TILE.LAMP;
+        if (map[midY + 2] && map[midY + 2][x] === TILE.GRASS) map[midY + 2][x] = TILE.LAMP;
+    }
+    
+    // Benches
+    for (let i = 0; i < 6; i++) {
+        const bx = Math.floor(rng() * width);
+        const by = Math.floor(rng() * height);
+        if (map[by][bx] === TILE.GRASS && Math.abs(bx - midX) > 2 && Math.abs(by - midY) > 2) {
+            map[by][bx] = TILE.BENCH;
+        }
+    }
+    
+    return { map, buildings };
+}
+
+// ============================================================
+// GAME STATE
+// ============================================================
+const game = {
+    player: { x: 0, y: 0, dir: 'down', frame: 0, moving: false, speed: 3 },
+    camera: { x: 0, y: 0 },
+    map: null,
+    mapWidth: 40,
+    mapHeight: 30,
+    buildings: [],
+    npcs: [],
+    particles: [],
+    time: 0,
+    dayTime: 0.3, // 0-1, 0=midnight, 0.5=noon
+    keys: {},
+    stats: { chunks: 1, helped: 0, rare: 0, npcs: 0, fps: 0 },
+    seed: 42
+};
+
+// ============================================================
+// INITIALIZATION
+// ============================================================
+function initGame() {
+    const result = generateMap(game.mapWidth, game.mapHeight, game.seed);
+    game.map = result.map;
+    game.buildings = result.buildings;
+    
+    // Place player at center
+    game.player.x = Math.floor(game.mapWidth / 2) * TILE_SIZE;
+    game.player.y = Math.floor(game.mapHeight / 2) * TILE_SIZE;
+    
+    // Generate NPCs
+    const npcColors = [
+        { hair: '#ff6b6b', skin: '#f5d0a0', shirt: '#ff4444', pants: '#333355', shoes: '#222' },
+        { hair: '#2a1a0a', skin: '#e8c090', shirt: '#44bb88', pants: '#444466', shoes: '#333' },
+        { hair: '#ffaa44', skin: '#f5d0a0', shirt: '#ffaa44', pants: '#554433', shoes: '#222' },
+        { hair: '#aa66ff', skin: '#d4a880', shirt: '#aa66ff', pants: '#333355', shoes: '#222' },
+        { hair: '#66aaff', skin: '#f5d0a0', shirt: '#66aaff', pants: '#444466', shoes: '#333' }
+    ];
+    
+    for (let i = 0; i < 5; i++) {
+        const rng = seededRandom(game.seed + i * 100);
+        let nx, ny;
+        do {
+            nx = Math.floor(rng() * game.mapWidth);
+            ny = Math.floor(rng() * game.mapHeight);
+        } while (game.map[ny][nx] !== TILE.PATH && game.map[ny][nx] !== TILE.GRASS);
+        
+        game.npcs.push({
+            x: nx * TILE_SIZE,
+            y: ny * TILE_SIZE,
+            colors: npcColors[i % npcColors.length],
+            frame: Math.floor(rng() * 100),
+            dir: ['up', 'down', 'left', 'right'][Math.floor(rng() * 4)],
+            moveTimer: 0,
+            moveInterval: 60 + Math.floor(rng() * 120),
+            name: ['Yuki', 'Haruto', 'Sakura', 'Ren', 'Aoi'][i]
+        });
+    }
+    
+    game.stats.npcs = game.npcs.length;
+}
+
+// ============================================================
+// INPUT HANDLING
+// ============================================================
+window.addEventListener('keydown', e => {
+    game.keys[e.key.toLowerCase()] = true;
+    if (e.key === ' ') {
+        e.preventDefault();
+        generateNewChunk();
+    }
+});
+window.addEventListener('keyup', e => game.keys[e.key.toLowerCase()] = false);
+
+function generateNewChunk() {
+    game.stats.chunks++;
+    addLog('New chunk generated!', 'transform');
+    updateStats();
+    
+    // Add particles
+    for (let i = 0; i < 20; i++) {
+        game.particles.push({
+            x: game.player.x + canvas.width / 2,
+            y: game.player.y + canvas.height / 2,
+            vx: (Math.random() - 0.5) * 4,
+            vy: (Math.random() - 0.5) * 4,
+            life: 60,
+            color: COLORS.highlight,
+            size: 3
+        });
+    }
+}
+
+function addLog(text, type = '') {
+    const log = document.getElementById('event-log');
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${type}`;
+    entry.textContent = text;
+    log.appendChild(entry);
+    setTimeout(() => entry.remove(), 5000);
+}
+
+function updateStats() {
+    document.getElementById('stat-chunks').textContent = game.stats.chunks;
+    document.getElementById('stat-helped').textContent = game.stats.helped;
+    document.getElementById('stat-rare').textContent = game.stats.rare;
+    document.getElementById('stat-npcs').textContent = game.stats.npcs;
+}
+
+// ============================================================
+// UPDATE
+// ============================================================
+function update() {
+    const p = game.player;
+    let dx = 0, dy = 0;
+    
+    if (game.keys['w'] || game.keys['arrowup']) { dy = -1; p.dir = 'up'; }
+    if (game.keys['s'] || game.keys['arrowdown']) { dy = 1; p.dir = 'down'; }
+    if (game.keys['a'] || game.keys['arrowleft']) { dx = -1; p.dir = 'left'; }
+    if (game.keys['d'] || game.keys['arrowright']) { dx = 1; p.dir = 'right'; }
+    
+    if (dx !== 0 || dy !== 0) {
+        p.moving = true;
+        p.frame += 0.15;
+        
+        const newX = p.x + dx * p.speed;
+        const newY = p.y + dy * p.speed;
+        
+        // Collision check
+        const tileX = Math.floor(newX / TILE_SIZE);
+        const tileY = Math.floor(newY / TILE_SIZE);
+        
+        if (tileX >= 0 && tileX < game.mapWidth && tileY >= 0 && tileY < game.mapHeight) {
+            const tile = game.map[tileY][tileX];
+            if (tile !== TILE.BUILDING && tile !== TILE.WALL && tile !== TILE.TREE) {
+                p.x = newX;
+                p.y = newY;
+            }
+        }
+    } else {
+        p.moving = false;
+    }
+    
+    // Update NPCs
+    for (const npc of game.npcs) {
+        npc.frame += 0.1;
+        npc.moveTimer++;
+        
+        if (npc.moveTimer >= npc.moveInterval) {
+            npc.moveTimer = 0;
+            const rng = seededRandom(Math.floor(game.time / 60) * 1000 + npc.x);
+            const moveX = Math.floor((rng() - 0.5) * 3);
+            const moveY = Math.floor((rng() - 0.5) * 3);
+            
+            const newTileX = Math.floor((npc.x + moveX * 20) / TILE_SIZE);
+            const newTileY = Math.floor((npc.y + moveY * 20) / TILE_SIZE);
+            
+            if (newTileX >= 0 && newTileX < game.mapWidth && newTileY >= 0 && newTileY < game.mapHeight) {
+                const tile = game.map[newTileY][newTileX];
+                if (tile !== TILE.BUILDING && tile !== TILE.WALL) {
+                    npc.x += moveX * 20;
+                    npc.y += moveY * 20;
+                }
+            }
+        }
+    }
+    
+    // Update particles
+    game.particles = game.particles.filter(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life--;
+        p.vy += 0.1;
+        return p.life > 0;
+    });
+    
+    // Day/night cycle
+    game.dayTime = (game.dayTime + 0.0001) % 1;
+    
+    // Camera follow
+    game.camera.x = p.x - canvas.width / 2;
+    game.camera.y = p.y - canvas.height / 2;
+    
+    game.time++;
+}
+
+// ============================================================
+// RENDER
+// ============================================================
 function render() {
-  ctx.fillStyle = "#0a0a12";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  for (const cid in state.chunks) {
-    const tiles = state.chunks[cid];
-    const anim = state.transformingChunks[cid];
-    if (anim) {
-      const [cx2, cz2] = cid.split("_").map(Number);
-      const [sx, sy] = w2s(cx2 * CHUNK_SIZE * TILE_SIZE, cz2 * CHUNK_SIZE * TILE_SIZE);
-      const size = CHUNK_SIZE * TILE_SIZE * state.zoom;
-      const flash = Math.sin(anim.progress * Math.PI * 4) * (1 - anim.progress);
-      ctx.fillStyle = "rgba(255,100,100," + (flash * 0.3) + ")";
-      ctx.fillRect(sx, sy, size, size);
-      ctx.strokeStyle = "rgba(255,68,68," + (0.8 * (1 - anim.progress)) + ")";
-      ctx.lineWidth = 3; ctx.strokeRect(sx, sy, size, size);
+    const cam = game.camera;
+    const tileSize = TILE_SIZE;
+    
+    // Sky gradient based on time of day
+    const skyColor = getSkyColor(game.dayTime);
+    ctx.fillStyle = skyColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.save();
+    ctx.translate(-cam.x, -cam.y);
+    
+    // Calculate visible tile range
+    const startX = Math.max(0, Math.floor(cam.x / tileSize));
+    const startY = Math.max(0, Math.floor(cam.y / tileSize));
+    const endX = Math.min(game.mapWidth, Math.ceil((cam.x + canvas.width) / tileSize) + 1);
+    const endY = Math.min(game.mapHeight, Math.ceil((cam.y + canvas.height) / tileSize) + 1);
+    
+    // Draw ground tiles
+    for (let y = startY; y < endY; y++) {
+        for (let x = startX; x < endX; x++) {
+            const tile = game.map[y][x];
+            const px = x * tileSize;
+            const py = y * tileSize;
+            
+            // Base grass with variation
+            const rng = seededRandom(x * 1000 + y);
+            const grassColor = COLORS.grass[Math.floor(rng() * COLORS.grass.length)];
+            ctx.fillStyle = grassColor;
+            ctx.fillRect(px, py, tileSize, tileSize);
+            
+            // Grass texture
+            ctx.fillStyle = 'rgba(0,0,0,0.05)';
+            for (let i = 0; i < 5; i++) {
+                const gx = px + rng() * tileSize;
+                const gy = py + rng() * tileSize;
+                ctx.fillRect(gx, gy, 2, 4);
+            }
+            
+            // Draw tile-specific elements
+            switch (tile) {
+                case TILE.PATH:
+                    drawPath(px, py, tileSize, rng);
+                    break;
+                case TILE.BUILDING:
+                    // Skip - buildings drawn separately
+                    break;
+                case TILE.TREE:
+                    drawTree(px + tileSize / 2, py + tileSize, 0.8, x * 100 + y);
+                    break;
+                case TILE.FLOWER:
+                    drawFlower(px + tileSize / 2, py + tileSize / 2, 1, x * 50 + y);
+                    break;
+                case TILE.BUSH:
+                    drawBush(px + tileSize / 2, py + tileSize / 2 + 5, 0.9);
+                    break;
+                case TILE.LAMP:
+                    drawLampPost(px + tileSize / 2, py + tileSize / 2);
+                    break;
+                case TILE.BENCH:
+                    drawBench(px + tileSize / 2, py + tileSize / 2);
+                    break;
+            }
+        }
     }
-
-    for (const key in tiles) {
-      const [tx, tz] = key.split(",").map(Number);
-      drawTile(tx, tz, tiles[key].typeId);
+    
+    // Draw buildings
+    for (const b of game.buildings) {
+        drawBuilding(b.x * tileSize, b.y * tileSize, b.w * tileSize, b.h * tileSize, b.x * 100 + b.y);
     }
-
-    // Chunk border
-    const [cx, cz] = cid.split("_").map(Number);
-    const [sx, sy] = w2s(cx * CHUNK_SIZE * TILE_SIZE, cz * CHUNK_SIZE * TILE_SIZE);
-    ctx.strokeStyle = "rgba(0,255,136,0.15)"; ctx.lineWidth = 1;
-    ctx.strokeRect(sx, sy, CHUNK_SIZE * TILE_SIZE * state.zoom, CHUNK_SIZE * TILE_SIZE * state.zoom);
-  }
-
-  for (const npc of state.npcs) {
-    const pos = state.npcPositions[npc.id];
-    const ns = state.npcStates[npc.id];
-    if (ns) drawNPC(npc, ns, pos);
-  }
-
-  drawPlayer();
-  drawMinimap();
-  updateUI();
+    
+    // Draw NPCs
+    for (const npc of game.npcs) {
+        drawCharacter(npc.x, npc.y, npc.frame, npc.dir, npc.colors, 1.2);
+        
+        // Name tag
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        const nameWidth = ctx.measureText(npc.name).width;
+        ctx.fillRect(npc.x - nameWidth / 2 - 4, npc.y - 30, nameWidth + 8, 14);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(npc.name, npc.x, npc.y - 20);
+    }
+    
+    // Draw player
+    drawCharacter(game.player.x, game.player.y, game.player.frame, game.player.dir, COLORS.player, 1.3);
+    
+    // Draw particles
+    for (const p of game.particles) {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life / 60;
+        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+    
+    ctx.restore();
+    
+    // Day/night overlay
+    drawDayNightOverlay();
 }
 
-function gameLoop(ts) {
-  const dt = Math.min(0.05, (ts - (gameLoop.last || ts)) / 1000);
-  gameLoop.last = ts;
-  update(dt);
-  render();
-  requestAnimationFrame(gameLoop);
+function drawPath(x, y, size, rng) {
+    ctx.fillStyle = COLORS.path;
+    ctx.fillRect(x, y, size, size);
+    
+    // Path texture
+    ctx.fillStyle = COLORS.pathDark;
+    for (let i = 0; i < 8; i++) {
+        const px = x + rng() * size;
+        const py = y + rng() * size;
+        ctx.fillRect(px, py, 3, 2);
+    }
+    
+    // Path edge
+    ctx.fillStyle = 'rgba(0,0,0,0.1)';
+    ctx.fillRect(x, y, size, 2);
+    ctx.fillRect(x, y + size - 2, size, 2);
 }
 
-// ─── Init ────────────────────────────────────────────────
-function init() {
-  for (let dx = -1; dx <= 1; dx++)
-    for (let dz = -1; dz <= 1; dz++)
-      ensureChunk(dx, dz);
-
-  spawnNPCs();
-
-  addLog("Welcome to Sakura Academy — explore the maze", "");
-  addLog("Find distressed students and help them", "stress");
-  addLog("Press E near a glowing NPC to help", "");
-
-  requestAnimationFrame(gameLoop);
+function drawLampPost(x, y) {
+    // Post
+    ctx.fillStyle = '#444';
+    ctx.fillRect(x - 2, y - 20, 4, 25);
+    
+    // Lamp head
+    ctx.fillStyle = '#666';
+    ctx.fillRect(x - 6, y - 24, 12, 6);
+    
+    // Light glow
+    const glowIntensity = Math.max(0, 1 - game.dayTime * 2);
+    if (glowIntensity > 0.3) {
+        ctx.fillStyle = `rgba(255, 255, 200, ${glowIntensity * 0.5})`;
+        ctx.beginPath();
+        ctx.arc(x, y - 20, 15, 0, Math.PI * 2);
+        ctx.fill();
+    }
 }
 
-init();
+function drawBench(x, y) {
+    // Seat
+    ctx.fillStyle = '#8b6914';
+    ctx.fillRect(x - 12, y - 4, 24, 4);
+    
+    // Legs
+    ctx.fillStyle = '#666';
+    ctx.fillRect(x - 10, y, 3, 6);
+    ctx.fillRect(x + 7, y, 3, 6);
+    
+    // Back
+    ctx.fillStyle = '#8b6914';
+    ctx.fillRect(x - 12, y - 10, 24, 3);
+    ctx.fillRect(x - 10, y - 10, 2, 8);
+    ctx.fillRect(x + 8, y - 10, 2, 8);
+}
+
+function getSkyColor(time) {
+    if (time < 0.25) return '#1a1a3e'; // Night
+    if (time < 0.35) return '#ff8855'; // Sunrise
+    if (time < 0.65) return '#87ceeb'; // Day
+    if (time < 0.75) return '#ff8855'; // Sunset
+    return '#1a1a3e'; // Night
+}
+
+function drawDayNightOverlay() {
+    let alpha = 0;
+    let color = '#000033';
+    
+    if (game.dayTime < 0.25) {
+        alpha = 0.4;
+    } else if (game.dayTime < 0.35) {
+        alpha = 0.4 - (game.dayTime - 0.25) * 4;
+    } else if (game.dayTime > 0.75) {
+        alpha = (game.dayTime - 0.75) * 1.6;
+    }
+    
+    if (alpha > 0) {
+        ctx.fillStyle = `rgba(0, 0, 50, ${alpha})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+}
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+let lastTime = 0;
+let frameCount = 0;
+let fpsTime = 0;
+
+function gameLoop(timestamp) {
+    const delta = timestamp - lastTime;
+    lastTime = timestamp;
+    
+    // FPS counter
+    frameCount++;
+    fpsTime += delta;
+    if (fpsTime >= 1000) {
+        game.stats.fps = frameCount;
+        document.getElementById('stat-fps').textContent = game.stats.fps;
+        frameCount = 0;
+        fpsTime = 0;
+    }
+    
+    update();
+    render();
+    
+    requestAnimationFrame(gameLoop);
+}
+
+// ============================================================
+// START
+// ============================================================
+initGame();
+updateStats();
+addLog('Welcome to Sakura Academy! Use WASD to move.', '');
+addLog('Press SPACE to generate new chunks.', '');
+requestAnimationFrame(gameLoop);
 </script>
 </body>
 </html>
